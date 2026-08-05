@@ -5,6 +5,8 @@ import type {AppDispatch, RootState} from "@/store/store";
 import type {Contact} from "@/features/contacts/model/schema/domainContract.schema.ts";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {loadOlderHistory} from "@/features/chat/thunk/loadOlderHistory.ts";
+import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
+import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {MESSAGE_WINDOW_INITIAL, MESSAGE_WINDOW_STEP} from "@/shared/config/chat.ts";
 import {isUlid} from "@/shared/ulid/ulid.ts";
 
@@ -114,6 +116,7 @@ interface ChatMessageView {
 
 interface ChatWindowProps {
     chat: Contact | null;
+    counterpartId?: string | null;
     messages: ChatMessageView[];
     historyError?: boolean;
     onReloadHistory?: () => void;
@@ -139,6 +142,7 @@ interface ChatWindowProps {
 
 function ChatWindow({
                         chat,
+                        counterpartId,
                         messages,
                         historyError,
                         onReloadHistory,
@@ -164,6 +168,16 @@ function ChatWindow({
     const {t} = useTranslation();
     const fileRef = useRef<HTMLInputElement>(null);
     const dispatch = useDispatch<AppDispatch>();
+
+    // "Last seen" for an OFFLINE peer: fetch only while they're offline (online-ness comes live from
+    // the presence slice; the timestamp only from this REST read). refetchOnMountOrArgChange gets a
+    // fresh value each time the header re-opens or the peer transitions offline. Absent/legacy backend
+    // (404) or a null timestamp → fmtLastSeen returns null → the header shows a plain "offline".
+    const {data: peerPresence} = useGetPresenceStatusQuery(counterpartId ?? "", {
+        skip: !counterpartId || !!chat?.online,
+        refetchOnMountOrArgChange: true,
+    });
+    const lastSeenText = !chat?.online ? fmtLastSeen(peerPresence?.lastSeen ?? null, t) : null;
 
     const selectedChatId = useSelector(
         (state: RootState) => state.chatUi.selectedChatId
@@ -311,7 +325,7 @@ function ChatWindow({
                                 ? <span className="text-teal-300">{t("chat.typing")}</span>
                                 : chat?.online
                                     ? <span className="text-green-400">● {t("chat.online")}</span>
-                                    : <span className="text-gray-400">● {t("chat.offline")}</span>}
+                                    : <span className="text-gray-400">● {lastSeenText ? t("chat.lastSeen", {time: lastSeenText}) : t("chat.offline")}</span>}
                         </span>
                     </span>
                 </div>

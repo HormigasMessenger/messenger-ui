@@ -99,6 +99,7 @@ export default function Messenger() {
             {/* ===== Chat Window ===== */}
             <ChatWindow
                 chat={chat.selectedChat}
+                counterpartId={selectedCounterpartId}
                 messages={chat.messages}
                 historyError={chat.historyError}
                 onReloadHistory={chat.reloadChatHistory}
