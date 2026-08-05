@@ -14,7 +14,7 @@ import {useMessageComposer} from "./useMessageComposer";
 import {useContacts} from "../../contacts/hooks/useContacts.ts";
 
 import {logger} from "@/shared/logger/logger.ts";
-import type {Contact} from "@/features/contacts/model/schema/domainContract.schema.ts";
+import type {Contact} from "@/entities/contact";
 
 
 export function useChat() {

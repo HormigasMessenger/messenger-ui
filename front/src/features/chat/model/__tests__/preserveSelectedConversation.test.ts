@@ -1,6 +1,6 @@
 import {describe, it, expect} from "vitest";
 import {preserveSelectedConversation} from "../preserveSelectedConversation";
-import type {ChatSummary} from "@/features/chat/rest/chatApi";
+import type {ChatSummary} from "@/entities/conversation";
 
 const sum = (id: string): ChatSummary => ({
     conversationId: id, counterpartId: "peer-" + id,

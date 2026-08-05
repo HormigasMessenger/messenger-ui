@@ -1,7 +1,8 @@
 import {useSelector} from "react-redux";
 import type {RootState} from "@/store/store.ts";
-import {useGetChatsQuery, type ChatSummary} from "@/features/chat/rest/chatApi.ts";
-import type {Contact} from "@/features/contacts/model/schema/domainContract.schema.ts";
+import {useGetChatsQuery} from "@/features/chat/rest/chatApi.ts";
+import type {ChatSummary} from "@/entities/conversation";
+import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory/idsApi.ts";
 import {useMemo} from "react";

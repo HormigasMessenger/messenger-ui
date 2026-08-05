@@ -1,4 +1,4 @@
-import type {ChatSummary} from "@/features/chat/rest/chatApi.ts";
+import type {ChatSummary} from "@/entities/conversation";
 
 // When the chat list is refetched (on reconnect / resume) it comes straight from GET /chats, which
 // HIDES conversations with no messages yet — including a just-created chat that AddUser injected into

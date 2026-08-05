@@ -1,6 +1,6 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import { z } from "zod";
-import { ContactSchema } from "@/features/contacts/model/schema/domainContract.schema.ts";
+import { ContactSchema } from "@/entities/contact";
 import { MESSENGER_API } from "@/shared/config/api.ts";
 
 // NOTE: the Hormigas Messenger does not expose /contacts endpoints (client directory is a

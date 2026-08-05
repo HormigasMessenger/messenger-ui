@@ -9,7 +9,8 @@ import {
 import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
-import {chatApi, type ChatSummary} from "@/features/chat/rest/chatApi.ts";
+import {chatApi} from "@/features/chat/rest/chatApi.ts";
+import type {ChatSummary} from "@/entities/conversation";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 

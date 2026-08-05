@@ -4,7 +4,7 @@ import {useNavigate} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 
 import type {RootState} from "@/store/store";
-import type {Contact} from "@/features/contacts/model/schema/domainContract.schema.ts";
+import type {Contact} from "@/entities/contact";
 import i18n, {setLanguage} from "@/shared/i18n";
 
 // First+last initial for the list avatar (falls back to "?").

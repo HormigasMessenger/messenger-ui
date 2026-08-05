@@ -2,7 +2,7 @@ import {Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef
 import {useDispatch, useSelector} from "react-redux";
 import {useTranslation} from "react-i18next";
 import type {AppDispatch, RootState} from "@/store/store";
-import type {Contact} from "@/features/contacts/model/schema/domainContract.schema.ts";
+import type {Contact} from "@/entities/contact";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {loadOlderHistory} from "@/features/chat/thunk/loadOlderHistory.ts";
 import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
