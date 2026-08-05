@@ -42,6 +42,9 @@ let reconnectAttempts = 0;
 const RAPID_CLOSE_MS = 10_000;      // a close within this of opening = a "rejected"/evicted cycle
 const RAPID_CYCLE_LIMIT = 3;        // this many rapid cycles in a row → trip the breaker
 const CIRCUIT_COOLDOWN_MS = 60_000; // then attempt at most once per this window
+// Backend close code for a session TAKE-OVER (a newer session for the same user superseded this one).
+// A WS application close code (3000–4999) the browser exposes in CloseEvent.code. See the backend spec.
+const WS_SUPERSEDED_CODE = 4409;
 let openedAt = 0;                   // when the current socket's onopen fired (0 = never opened)
 let rapidCycles = 0;                // consecutive open→quick-close cycles
 let cooldownUntil = 0;              // epoch ms until which reconnects are held off
@@ -117,7 +120,7 @@ export const websocketMiddleware: Middleware =
                 dispatch(wsError("WebSocket error"));
             };
 
-            thisSocket.onclose = () => {
+            thisSocket.onclose = (event: CloseEvent) => {
                 // Closure-race fix: only drop the module ref if it STILL points at THIS socket. A
                 // late onclose of a superseded socket must not null a newer live one (that would let
                 // the OPEN/CONNECTING guard pass and spawn a duplicate socket → self-eviction loop).
@@ -126,6 +129,16 @@ export const websocketMiddleware: Middleware =
                 dispatch(disconnected());
 
                 if (!shouldReconnect) return;
+
+                // Session TAKE-OVER (backend "single active session per user"): the server closes the
+                // OLDER socket with 4409 when a NEW session for this user connects. Do NOT auto-reconnect
+                // — that would resume the eviction ping-pong. This is the deterministic counterpart to
+                // the circuit-breaker throttle: the loser yields cleanly. A user-driven ws/connect (this
+                // tab regains focus → onWake) can still reconnect and take the session back.
+                if (event.code === WS_SUPERSEDED_CODE) {
+                    logger.debug("WS superseded (4409): another session took over — not auto-reconnecting");
+                    return;
+                }
 
                 // Circuit breaker: a socket that OPENED then closed within RAPID_CLOSE_MS is the
                 // eviction/rejection signature. Count consecutive such cycles; a slower close (or a

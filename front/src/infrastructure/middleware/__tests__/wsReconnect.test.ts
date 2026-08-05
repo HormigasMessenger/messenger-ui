@@ -16,15 +16,15 @@ class FakeWS {
     static instances: FakeWS[] = [];
     readyState = FakeWS.CONNECTING;
     onopen: (() => void) | null = null;
-    onclose: (() => void) | null = null;
+    onclose: ((e: {code: number}) => void) | null = null;
     onerror: (() => void) | null = null;
     onmessage: ((e: MessageEvent) => void) | null = null;
     url: string;
     constructor(url: string) { this.url = url; FakeWS.instances.push(this); }
-    close() { this.readyState = FakeWS.CLOSED; this.onclose?.(); }
+    close(code = 1000) { this.readyState = FakeWS.CLOSED; this.onclose?.({code}); }
     open() { this.readyState = FakeWS.OPEN; this.onopen?.(); }
-    // simulate a server/network close of an already-open socket
-    serverClose() { this.readyState = FakeWS.CLOSED; this.onclose?.(); }
+    // simulate a server/network close of an already-open socket (default 1006 = abnormal)
+    serverClose(code = 1006) { this.readyState = FakeWS.CLOSED; this.onclose?.({code}); }
 }
 
 function makeStore() {
@@ -69,6 +69,24 @@ describe("wsMiddleware reconnect circuit breaker", () => {
         // A normal (small-backoff) reconnect fires well under the cooldown.
         vi.advanceTimersByTime(2_000);
         expect(FakeWS.instances.length).toBe(2); // reconnected promptly
+    });
+
+    it("does NOT auto-reconnect after a 4409 take-over close (session superseded elsewhere)", () => {
+        dispatchConnect();
+        FakeWS.instances[0].open();
+        vi.advanceTimersByTime(1_000);
+        FakeWS.instances[0].serverClose(4409); // backend evicted this (older) session
+        vi.advanceTimersByTime(30_000);
+        expect(FakeWS.instances.length).toBe(1); // stayed put — no reconnect loop
+    });
+
+    it("a plain abnormal close (1006 network drop) still auto-reconnects", () => {
+        dispatchConnect();
+        FakeWS.instances[0].open();
+        vi.advanceTimersByTime(20_000);
+        FakeWS.instances[0].serverClose(1006);
+        vi.advanceTimersByTime(2_000);
+        expect(FakeWS.instances.length).toBe(2); // reconnected
     });
 
     it("NEVER blocks: a wake (ws/connect) reconnects immediately even during a cooldown", () => {
