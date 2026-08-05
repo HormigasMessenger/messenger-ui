@@ -9,9 +9,7 @@ import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {MESSAGE_WINDOW_INITIAL, MESSAGE_WINDOW_STEP} from "@/shared/config/chat.ts";
 import {isUlid} from "@/shared/ulid/ulid.ts";
-
-// Local HH:mm for a message timestamp (epoch ms).
-const fmtTime = (ms: number) => new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+import {sameDay, formatLocalTime, formatLocalDate} from "@/shared/lib/datetime.ts";
 
 // Render message text with clickable links. Safe: builds React nodes (no HTML injection).
 const URL_RE = /(https?:\/\/[^\s]+)/g;
@@ -23,22 +21,12 @@ function linkify(text: string) {
     );
 }
 
-const sameDay = (a: number, b: number) => {
-    const x = new Date(a), y = new Date(b);
-    return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
-};
 // "Hoy" / "Ayer" / a localized date for the day-separator chips.
 function dateLabel(ms: number, t: (k: string) => string) {
     const now = Date.now();
-    const yesterday = now - 86_400_000;
     if (sameDay(ms, now)) return t("chat.today");
-    if (sameDay(ms, yesterday)) return t("chat.yesterday");
-    const d = new Date(ms);
-    return d.toLocaleDateString([], {
-        day: "2-digit",
-        month: "short",
-        year: d.getFullYear() === new Date().getFullYear() ? undefined : "numeric",
-    });
+    if (sameDay(ms, now - 86_400_000)) return t("chat.yesterday");
+    return formatLocalDate(ms, now);
 }
 
 /** Inline thumbnail for image attachments. Presigned GET URLs expire, so it resolves
@@ -465,7 +453,7 @@ function ChatWindow({
                         ) : (
                             linkify(msg.text)
                         )}
-                        <span className="ml-2 text-[10px] align-bottom opacity-50">{fmtTime(msg.createdAt)}</span>
+                        <span className="ml-2 text-[10px] align-bottom opacity-50">{formatLocalTime(msg.createdAt)}</span>
                         {msg.fromMe && (() => {
                             const st = outboxStatusById?.[msg.id];
                             if (st === "failed") {

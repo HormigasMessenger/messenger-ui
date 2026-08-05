@@ -8,13 +8,7 @@
 // older → localized date + time. Returns null when there is nothing to show (so the caller falls
 // back to a plain "offline").
 
-const sameDay = (a: number, b: number) => {
-    const x = new Date(a), y = new Date(b);
-    return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate();
-};
-
-const localTime = (ms: number) =>
-    new Date(ms).toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+import {sameDay, formatLocalTime, formatLocalDate} from "@/shared/lib/datetime.ts";
 
 /**
  * @param lastSeen UTC epoch millis, or null/undefined.
@@ -28,13 +22,7 @@ export function fmtLastSeen(
     now: number = Date.now(),
 ): string | null {
     if (lastSeen == null) return null;
-    if (sameDay(lastSeen, now)) return localTime(lastSeen);
-    if (sameDay(lastSeen, now - 86_400_000)) return `${t("chat.yesterday")} ${localTime(lastSeen)}`;
-    const d = new Date(lastSeen);
-    const date = d.toLocaleDateString([], {
-        day: "2-digit",
-        month: "short",
-        year: d.getFullYear() === new Date(now).getFullYear() ? undefined : "numeric",
-    });
-    return `${date} ${localTime(lastSeen)}`;
+    if (sameDay(lastSeen, now)) return formatLocalTime(lastSeen);
+    if (sameDay(lastSeen, now - 86_400_000)) return `${t("chat.yesterday")} ${formatLocalTime(lastSeen)}`;
+    return `${formatLocalDate(lastSeen, now)} ${formatLocalTime(lastSeen)}`;
 }

@@ -25,6 +25,8 @@ vi.mock("@/features/chat/model/services/chatMessages.service.ts", () => ({
 
 vi.mock("@/shared/sound/notify.ts", () => ({
     playNotificationSound: vi.fn(),
+}));
+vi.mock("@/features/notifications/desktopNotification.ts", () => ({
     showDesktopNotification: vi.fn(),
 }));
 
@@ -32,7 +34,8 @@ vi.mock("@/shared/i18n", () => ({default: {t: (k: string) => k}}));
 
 import {chatMiddleware} from "../chatMiddleware";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
-import {playNotificationSound, showDesktopNotification} from "@/shared/sound/notify.ts";
+import {playNotificationSound} from "@/shared/sound/notify.ts";
+import {showDesktopNotification} from "@/features/notifications/desktopNotification.ts";
 import {markSent} from "@/features/chat/model/slices/outboxSlice.ts";
 import {markChatUnread} from "@/features/chat/model/slices/chatUiSlice.ts";
 

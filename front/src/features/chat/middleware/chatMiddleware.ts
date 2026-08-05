@@ -8,7 +8,8 @@ import {buildChatAck, buildReadIn, type WireMessage} from "@/features/chat/model
 import {markChatUnread, setPeerLastReadId, setTyping} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {markSent} from "@/features/chat/model/slices/outboxSlice.ts";
 import {logger} from "@/shared/logger/logger.ts";
-import {playNotificationSound, showDesktopNotification} from "@/shared/sound/notify.ts";
+import {playNotificationSound} from "@/shared/sound/notify.ts";
+import {showDesktopNotification} from "@/features/notifications/desktopNotification.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.

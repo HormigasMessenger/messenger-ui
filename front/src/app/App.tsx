@@ -10,7 +10,7 @@ import {useWebSocketConnection} from "@/infrastructure/hooks/useWebSocketConnect
 import {markInitialized} from "@/features/auth/slices/userSlice.ts";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {ErrorBoundary} from "@/shared/ui/ErrorBoundary.tsx";
-import {armNotificationPermissionOnGesture, requestNotificationPermission} from "@/shared/sound/notify.ts";
+import {armNotificationPermissionOnGesture, requestNotificationPermission} from "@/features/notifications/desktopNotification.ts";
 import {ensurePushSubscription} from "@/features/notifications/push.ts";
 
 // Route-level code splitting: keep the initial bundle small (each screen loads on demand).

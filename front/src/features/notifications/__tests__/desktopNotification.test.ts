@@ -1,5 +1,5 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
-import {showDesktopNotification} from "../notify";
+import {showDesktopNotification} from "../desktopNotification";
 
 // showDesktopNotification must route the ONLINE notification through the service worker (the single
 // arbiter), carrying messageId so the SW can dedup it against an offline Web Push for the same
