@@ -32,6 +32,21 @@ let socket: WebSocket | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
 
+// --- Reconnect circuit breaker (stops the connect↔reconnect ping-pong) ---
+// The backend enforces ONE active session per user: opening a 2nd session (another tab/device)
+// makes it CLOSE the older socket (a clean 1000, indistinguishable from a normal close). Since we
+// reconnect on every close, two live sessions of one user would evict each other forever. This
+// breaker detects the signature — a socket that OPENS then closes again almost immediately, several
+// times in a row — and backs off hard (a cooldown) instead of hammering. A durable connection
+// (alive past RAPID_CLOSE_MS) clears it, so a normal single reconnect never trips it.
+const RAPID_CLOSE_MS = 10_000;      // a close within this of opening = a "rejected"/evicted cycle
+const RAPID_CYCLE_LIMIT = 3;        // this many rapid cycles in a row → trip the breaker
+const CIRCUIT_COOLDOWN_MS = 60_000; // then attempt at most once per this window
+let openedAt = 0;                   // when the current socket's onopen fired (0 = never opened)
+let rapidCycles = 0;                // consecutive open→quick-close cycles
+let cooldownUntil = 0;              // epoch ms until which reconnects are held off
+let stableTimer: ReturnType<typeof setTimeout> | null = null; // fires once a connection proves durable
+
 // --------------------
 // Middleware
 // --------------------
@@ -43,10 +58,12 @@ export const websocketMiddleware: Middleware =
         const scheduleReconnect = (url: string) => {
             reconnectAttempts += 1;
 
-            const delay = Math.min(
+            const backoff = Math.min(
                 DELAY_STEP_MS * 2 ** reconnectAttempts,
                 MAX_RECONNECT_DELAY
             );
+            // Honor an active circuit-breaker cooldown: never attempt sooner than cooldownUntil.
+            const delay = Math.max(backoff, cooldownUntil - Date.now());
 
             logger.debug(`🔁 WS reconnect #${reconnectAttempts} in ${delay}ms`);
             reconnectTimeout = setTimeout(() => connect(url, true), delay);
@@ -70,16 +87,30 @@ export const websocketMiddleware: Middleware =
                 return;
             }
 
-            dispatch(connecting());
-            socket = new WebSocket(url);
+            // Circuit breaker active → don't open now; defer to when the cooldown ends. This makes
+            // the breaker authoritative for BOTH the reconnect path and a visibility/online wake
+            // (which dispatches ws/connect), so a two-session eviction war can't resume tight-looping.
+            const wait = cooldownUntil - Date.now();
+            if (wait > 0) {
+                if (!reconnectTimeout) reconnectTimeout = setTimeout(() => connect(url, shouldReconnect), wait);
+                return;
+            }
 
-            socket.onopen = () => {
+            dispatch(connecting());
+            const thisSocket = new WebSocket(url);
+            socket = thisSocket;
+
+            thisSocket.onopen = () => {
                 reconnectAttempts = 0;
+                openedAt = Date.now();
+                // If this connection stays up past the rapid window, it's healthy → clear the breaker.
+                if (stableTimer) clearTimeout(stableTimer);
+                stableTimer = setTimeout(() => { rapidCycles = 0; }, RAPID_CLOSE_MS);
                 dispatch(connected());
                 logger.debug(`🔗 WS connected #${reconnectAttempts} to ${url}`);
             };
 
-            socket.onmessage = (event: MessageEvent<string>) => {
+            thisSocket.onmessage = (event: MessageEvent<string>) => {
                 try {
                     const raw = JSON.parse(event.data) as WSMessage;
                     dispatch(incoming(fromWire(raw)));
@@ -88,15 +119,34 @@ export const websocketMiddleware: Middleware =
                 }
             };
 
-            socket.onerror = () => {
+            thisSocket.onerror = () => {
                 dispatch(wsError("WebSocket error"));
             };
 
-            socket.onclose = () => {
-                socket = null;
+            thisSocket.onclose = () => {
+                // Closure-race fix: only drop the module ref if it STILL points at THIS socket. A
+                // late onclose of a superseded socket must not null a newer live one (that would let
+                // the OPEN/CONNECTING guard pass and spawn a duplicate socket → self-eviction loop).
+                if (socket === thisSocket) socket = null;
+                if (stableTimer) { clearTimeout(stableTimer); stableTimer = null; }
                 dispatch(disconnected());
 
                 if (!shouldReconnect) return;
+
+                // Circuit breaker: a socket that OPENED then closed within RAPID_CLOSE_MS is the
+                // eviction/rejection signature. Count consecutive such cycles; a slower close (or a
+                // never-opened attempt) doesn't count. Past the limit, arm a cooldown so scheduleReconnect
+                // (and any wake-driven connect) holds off instead of ping-ponging.
+                if (openedAt) {
+                    if (Date.now() - openedAt < RAPID_CLOSE_MS) rapidCycles += 1;
+                    else rapidCycles = 0;
+                }
+                openedAt = 0;
+                if (rapidCycles >= RAPID_CYCLE_LIMIT) {
+                    cooldownUntil = Date.now() + CIRCUIT_COOLDOWN_MS;
+                    rapidCycles = 0;
+                    logger.debug(`⛔ WS reconnect throttled: ${RAPID_CYCLE_LIMIT} rapid cycles → cooldown ${CIRCUIT_COOLDOWN_MS}ms (another session may hold this user)`);
+                }
 
                 // A rejected WS upgrade (expired Kratos session) surfaces as a generic close (1006),
                 // indistinguishable from a network drop — so blind reconnect would loop forever while
@@ -162,6 +212,12 @@ export const websocketMiddleware: Middleware =
                 }
 
                 reconnectAttempts = 0;
+                // Reset the circuit breaker: an explicit disconnect (logout / re-auth) is a clean
+                // slate — the next connect must not be held off by a stale cooldown.
+                if (stableTimer) { clearTimeout(stableTimer); stableTimer = null; }
+                openedAt = 0;
+                rapidCycles = 0;
+                cooldownUntil = 0;
 
                 if (socket) {
                     socket.close(1000, "Client disconnect");
