@@ -66,7 +66,10 @@ export const websocketMiddleware: Middleware =
             const delay = Math.max(backoff, cooldownUntil - Date.now());
 
             logger.debug(`🔁 WS reconnect #${reconnectAttempts} in ${delay}ms`);
-            reconnectTimeout = setTimeout(() => connect(url, true), delay);
+            reconnectTimeout = setTimeout(() => {
+                reconnectTimeout = null; // clear BEFORE connecting so the ref never goes stale
+                connect(url, true);
+            }, delay);
         };
 
         const connect = (url: string, shouldReconnect: boolean) => {
@@ -84,15 +87,6 @@ export const websocketMiddleware: Middleware =
                 (socket.readyState === WebSocket.OPEN ||
                     socket.readyState === WebSocket.CONNECTING)
             ) {
-                return;
-            }
-
-            // Circuit breaker active → don't open now; defer to when the cooldown ends. This makes
-            // the breaker authoritative for BOTH the reconnect path and a visibility/online wake
-            // (which dispatches ws/connect), so a two-session eviction war can't resume tight-looping.
-            const wait = cooldownUntil - Date.now();
-            if (wait > 0) {
-                if (!reconnectTimeout) reconnectTimeout = setTimeout(() => connect(url, shouldReconnect), wait);
                 return;
             }
 
@@ -135,8 +129,10 @@ export const websocketMiddleware: Middleware =
 
                 // Circuit breaker: a socket that OPENED then closed within RAPID_CLOSE_MS is the
                 // eviction/rejection signature. Count consecutive such cycles; a slower close (or a
-                // never-opened attempt) doesn't count. Past the limit, arm a cooldown so scheduleReconnect
-                // (and any wake-driven connect) holds off instead of ping-ponging.
+                // never-opened attempt) doesn't count. Past the limit, arm a cooldown that scheduleReconnect
+                // folds into its delay (a THROTTLE — the auto-reconnect loop slows to ~once/cooldown
+                // instead of ping-ponging). It never BLOCKS: a user-driven ws/connect (visibility/online
+                // wake) still connects immediately, and the automatic reconnect is only slowed, not stopped.
                 if (openedAt) {
                     if (Date.now() - openedAt < RAPID_CLOSE_MS) rapidCycles += 1;
                     else rapidCycles = 0;

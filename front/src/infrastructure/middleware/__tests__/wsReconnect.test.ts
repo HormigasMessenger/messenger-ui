@@ -71,6 +71,24 @@ describe("wsMiddleware reconnect circuit breaker", () => {
         expect(FakeWS.instances.length).toBe(2); // reconnected promptly
     });
 
+    it("NEVER blocks: a wake (ws/connect) reconnects immediately even during a cooldown", () => {
+        const store = dispatchConnect();
+        // Arm the cooldown with 3 rapid cycles.
+        for (let i = 0; i < 3; i++) {
+            const ws = FakeWS.instances[FakeWS.instances.length - 1];
+            ws.open();
+            vi.advanceTimersByTime(200);
+            ws.serverClose();
+            vi.advanceTimersByTime(1_000);
+        }
+        const armed = FakeWS.instances.length;
+        // A user-driven ws/connect (visibility/online wake) must open a socket RIGHT NOW — the
+        // regression was connect() deferring forever behind a stale reconnect timer.
+        const run = websocketMiddleware(store as never)((a: unknown) => a);
+        run(CONNECT as never);
+        expect(FakeWS.instances.length).toBe(armed + 1);
+    });
+
     it("throttles to a cooldown after 3 rapid open→close cycles (eviction ping-pong)", () => {
         dispatchConnect();
         // 3 rapid cycles: open then close almost immediately, each time.

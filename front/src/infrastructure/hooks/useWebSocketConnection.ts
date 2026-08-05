@@ -20,41 +20,23 @@ export function useWebSocketConnection() {
 
         const connect = () =>
             dispatch({ type: "ws/connect", payload: { url }, meta: { shouldReconnect: true } });
-        const disconnect = () => dispatch({ type: "ws/disconnect" });
 
         connect();
 
-        // GO OFFLINE ON SUSPEND so Web Push can take over.
-        // A backgrounded mobile keeps its WS "alive" from the server's view: the browser answers the
-        // server's ping with a PONG at the NETWORK layer (below the frozen JS), so the server never
-        // reaps the idle session and keeps the user "online" → messages are delivered to a socket the
-        // user cannot see and NO offline `chat.offline.notify` (→ no Web Push) is ever emitted. That is
-        // why notifications don't arrive with the screen off. Fix: when the page is actually SUSPENDED
-        // (`freeze`) or hidden away (`pagehide`), proactively close the WS so the backend flips the user
-        // offline and routes the next message through Web Push. We key off suspension — NOT a mere
-        // `visibilitychange → hidden` — so a briefly-hidden DESKTOP tab (which keeps running JS and
-        // shows its own in-app notification over the live WS) is not needlessly disconnected.
-        const onSuspend = () => disconnect();
-        // Reconnect the moment we're back (and catch up history — handled by useChat's resume effect).
+        // A backgrounded tab (esp. on mobile) can come back with a dead socket while the browser
+        // suspended our reconnect timer. Reconnect immediately when the tab is visible again or the
+        // network returns. ws/connect is idempotent (no-ops if a socket is already OPEN/CONNECTING),
+        // so firing these liberally is safe.
         const onWake = () => {
             if (document.visibilityState === "visible" && navigator.onLine) connect();
         };
-
-        document.addEventListener("freeze", onSuspend);       // Page Lifecycle: page frozen (Chrome/Android)
-        window.addEventListener("pagehide", onSuspend);        // Safari/iOS backgrounding + bfcache
-        document.addEventListener("resume", onWake);           // Page Lifecycle: page unfrozen
-        window.addEventListener("pageshow", onWake);           // Safari/iOS foreground/bfcache restore
-        document.addEventListener("visibilitychange", onWake); // generic "tab visible again"
-        window.addEventListener("online", onWake);             // network came back
+        document.addEventListener("visibilitychange", onWake);
+        window.addEventListener("online", onWake);
 
         return () => {
-            document.removeEventListener("freeze", onSuspend);
-            window.removeEventListener("pagehide", onSuspend);
-            document.removeEventListener("resume", onWake);
-            window.removeEventListener("pageshow", onWake);
             document.removeEventListener("visibilitychange", onWake);
             window.removeEventListener("online", onWake);
-            disconnect();
+            dispatch({ type: "ws/disconnect" });
         };
     }, [myId, dispatch]);
 }
