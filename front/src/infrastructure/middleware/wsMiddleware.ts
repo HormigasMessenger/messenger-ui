@@ -220,6 +220,12 @@ export const websocketMiddleware: Middleware =
                 cooldownUntil = 0;
 
                 if (socket) {
+                    // Detach the reconnecting handlers FIRST: an explicit disconnect must NOT trigger
+                    // the onclose auto-reconnect (its closure captured shouldReconnect=true). Without
+                    // this, ws/disconnect would immediately reconnect — defeating a deliberate go
+                    // offline (logout, or the page-suspend disconnect that lets Web Push take over).
+                    socket.onclose = null;
+                    socket.onerror = null;
                     socket.close(1000, "Client disconnect");
                     socket = null;
                 }
