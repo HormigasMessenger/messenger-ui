@@ -224,6 +224,10 @@ function ChatWindow({
     const [loadingOlder, setLoadingOlder] = useState(false);
     const anchorRef = useRef<number | null>(null);
     const prevLastIdRef = useRef<string | null>(null);
+    // Set true when a chat opens; a layout effect lands the view at the newest message as soon as the
+    // opened chat's rows actually render (history loads async, so scrolling on open-alone lands on an
+    // empty/stale list — the "stuck in the middle" bug).
+    const pendingBottomRef = useRef(true);
     useEffect(() => {
         setVisibleCount(MESSAGE_WINDOW_INITIAL);
         setReachedStart(false);
@@ -266,16 +270,34 @@ function ChatWindow({
         anchorRef.current = null;
     }, [shown.length]);
 
-    // Opening a chat lands at the newest message, resets trackers, and focuses the composer (only
-    // on wide screens — avoid popping the mobile keyboard on every open).
-    useEffect(() => {
+    // Opening a chat: reset trackers, arm the "land at bottom" flag, focus the composer (wide screens
+    // only — don't pop the mobile keyboard on every open). LAYOUT effect (before paint) + defined
+    // BEFORE the landing effect below, so pendingBottomRef is set before that effect reads it.
+    useLayoutEffect(() => {
         atBottomRef.current = true;
         setUnseenBelow(0);
-        bottomRef.current?.scrollIntoView();
+        pendingBottomRef.current = true;
         if (typeof window !== "undefined" && window.matchMedia?.("(min-width: 640px)").matches) {
             inputRef.current?.focus();
         }
     }, [selectedChatId]);
+
+    // Land at the newest message once the opened chat's rows are present. Instant (scrollTop), not a
+    // smooth animation that a re-render can interrupt. Waits for shown.length > 0 so an async history
+    // load lands correctly instead of leaving the view mid-list. A rAF re-assert catches late layout
+    // (e.g. images gaining height) so the view doesn't drift off the bottom right after opening.
+    useLayoutEffect(() => {
+        if (!pendingBottomRef.current || shown.length === 0) return;
+        const el = listRef.current;
+        if (!el) return;
+        el.scrollTop = el.scrollHeight;
+        atBottomRef.current = true;
+        pendingBottomRef.current = false;
+        requestAnimationFrame(() => {
+            const e2 = listRef.current;
+            if (e2 && atBottomRef.current) e2.scrollTop = e2.scrollHeight;
+        });
+    }, [selectedChatId, shown.length]);
 
     // Follow to the bottom / count "unseen" ONLY when a message is APPENDED (newest id changes) —
     // never when older messages are PREPENDED (scroll-up load grows length but the last id is same),
