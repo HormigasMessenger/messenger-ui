@@ -53,6 +53,22 @@ export default function Messenger() {
         setSearchParams(next, {replace: true});
     }, [searchParams, openChat, setSearchParams]);
 
+    // Deep link from an INCOMING-CALL push (SW notificationclick "Answer"):
+    //   ?call=<conversationId>&caller=<callerUserId>
+    // Open the conversation and call the caller back — the original WebRTC offer is stale by the time
+    // the app cold-starts, so "answering" re-initiates the call to them. Then strip the params.
+    useEffect(() => {
+        const callParam = searchParams.get("call");
+        const caller = searchParams.get("caller");
+        if (!callParam) return;
+        openChat(callParam);
+        if (caller) dispatch(outgoingCall(caller));
+        const next = new URLSearchParams(searchParams);
+        next.delete("call");
+        next.delete("caller");
+        setSearchParams(next, {replace: true});
+    }, [searchParams, openChat, dispatch, setSearchParams]);
+
     /* ======================
        Delete modal
     ====================== */

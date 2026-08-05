@@ -43,15 +43,24 @@ async function showChatNotification(payload) {
     // Dedup across channels first (synchronous claim above any await).
     if (!claimShow(data.messageId)) return;
 
-    const title = (payload && payload.title) || "New message";
-    const tag = (payload && payload.tag) || data.conversationId || "chat-message";
+    const isCall = data.kind === "call";
+    const title = (payload && payload.title) || (isCall ? "Incoming call" : "New message");
+    // A call gets its OWN tag so it never collapses into a message notification for the same chat.
+    const tag = isCall
+        ? "call:" + (data.conversationId || "chat")
+        : ((payload && payload.tag) || data.conversationId || "chat-message");
     const options = {
-        body: (payload && payload.body) || "You have a new message",
+        body: (payload && payload.body) || (isCall ? "is calling you…" : "You have a new message"),
         icon: SCOPE_PATH + "pwa-192x192.png",
         badge: SCOPE_PATH + "pwa-192x192.png",
-        tag,               // one notification per conversation
+        tag,               // one notification per conversation (calls: per conversation, distinct)
         renotify: true,
         data,
+        // Call: keep it up until acted on, vibrate, and offer an explicit action. The button's
+        // action id is read in notificationclick to route to the answer/call-back flow.
+        requireInteraction: isCall,
+        vibrate: isCall ? [200, 100, 200, 100, 200] : undefined,
+        actions: isCall ? [{ action: "answer", title: "Answer" }] : undefined,
     };
     // Belt-and-suspenders: also close any existing same-tag notification so a lingering prior one for
     // this conversation is replaced rather than stacked (OS tag-replace is unreliable on iOS).
@@ -80,7 +89,17 @@ self.addEventListener("message", (event) => {
 self.addEventListener("notificationclick", (event) => {
     event.notification.close();
     const data = event.notification.data || {};
-    const target = data.url || (self.registration.scope);
+    // For a call: tapping "Answer" (or the body) routes to the call-back deep link so the app opens the
+    // conversation AND starts calling the caller (the original WebRTC offer is stale by now, so we
+    // re-initiate). data.url is the plain chat link (used for message notifications / a non-call tap).
+    let target = data.url || self.registration.scope;
+    if (data.kind === "call" && (data.conversationId || data.senderId)) {
+        const base = new URL(SCOPE_PATH, self.registration.scope).href;
+        const qs = new URLSearchParams();
+        if (data.conversationId) qs.set("call", data.conversationId);
+        if (data.senderId) qs.set("caller", data.senderId);
+        target = base + "?" + qs.toString();
+    }
     event.waitUntil((async () => {
         const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
         // Focus an already-open app window if there is one, and route it to the click-through URL
