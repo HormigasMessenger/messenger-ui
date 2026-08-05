@@ -9,89 +9,10 @@ import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {MESSAGE_WINDOW_INITIAL, MESSAGE_WINDOW_STEP} from "@/shared/config/chat.ts";
 import {isUlid} from "@/shared/ulid/ulid.ts";
-import {sameDay, formatLocalTime, formatLocalDate} from "@/shared/lib/datetime.ts";
-
-// Render message text with clickable links. Safe: builds React nodes (no HTML injection).
-const URL_RE = /(https?:\/\/[^\s]+)/g;
-function linkify(text: string) {
-    return text.split(URL_RE).map((part, i) =>
-        /^https?:\/\//.test(part)
-            ? <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="underline break-all">{part}</a>
-            : <Fragment key={i}>{part}</Fragment>
-    );
-}
-
-// "Hoy" / "Ayer" / a localized date for the day-separator chips.
-function dateLabel(ms: number, t: (k: string) => string) {
-    const now = Date.now();
-    if (sameDay(ms, now)) return t("chat.today");
-    if (sameDay(ms, now - 86_400_000)) return t("chat.yesterday");
-    return formatLocalDate(ms, now);
-}
-
-/** Inline thumbnail for image attachments. Presigned GET URLs expire, so it resolves
- *  a fresh URL on mount (per attachmentId). Click opens the full image in a new tab. */
-function AttachmentImage({
-                             attachmentId,
-                             fileName,
-                             resolveUrl,
-                         }: {
-    attachmentId: string;
-    fileName: string;
-    resolveUrl?: (attachmentId: string) => Promise<string | null>;
-}) {
-    const [url, setUrl] = useState<string | null>(null);
-    const [failed, setFailed] = useState(false);
-    const [attempt, setAttempt] = useState(0);
-    const resolveRef = useRef(resolveUrl);
-    resolveRef.current = resolveUrl;
-
-    useEffect(() => {
-        let alive = true;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        setUrl(null);
-        setFailed(false);
-        // A JUST-uploaded image can briefly be unresolvable (presign/object not ready yet). Retry a
-        // few times with backoff before giving up, instead of getting stuck on the "📎 attachment"
-        // fallback forever (the one-shot resolve was the bug for recently-sent images).
-        let tries = 0;
-        const MAX = 4;
-        const go = () => {
-            resolveRef.current?.(attachmentId)
-                .then((u) => {
-                    if (!alive) return;
-                    if (u) { setUrl(u); return; }
-                    if (++tries < MAX) timer = setTimeout(go, 800 * tries);
-                    else setFailed(true);
-                })
-                .catch(() => {
-                    if (!alive) return;
-                    if (++tries < MAX) timer = setTimeout(go, 800 * tries);
-                    else setFailed(true);
-                });
-        };
-        go();
-        return () => { alive = false; if (timer) clearTimeout(timer); };
-    }, [attachmentId, attempt]);
-
-    // Failed after retries → tappable to try again (rather than a dead label).
-    if (failed) return (
-        <button onClick={() => setAttempt((a) => a + 1)} className="break-all underline decoration-dotted" title={fileName}>
-            📎 {fileName} — ↻
-        </button>
-    );
-    if (!url) return <span className="opacity-60 text-xs">🖼 cargando…</span>;
-    return (
-        <a href={url} target="_blank" rel="noopener noreferrer" title={fileName}>
-            <img
-                src={url}
-                alt={fileName}
-                onError={() => setFailed(true)}
-                className="max-w-[200px] max-h-[200px] rounded-md object-cover"
-            />
-        </a>
-    );
-}
+import {sameDay, formatLocalTime} from "@/shared/lib/datetime.ts";
+import {AttachmentImage} from "./AttachmentImage.tsx";
+import {ChatHeader} from "./ChatHeader.tsx";
+import {linkify, dateLabel} from "./messageFormat.tsx";
 
 interface ChatMessageView {
     id: string;
@@ -334,58 +255,16 @@ function ChatWindow({
             }`}
         >
             {/* Header */}
-            <div
-                className="shrink-0 py-4 px-4 bg-teal-950 text-white border-b font-semibold flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => dispatch(setSelectedChatId(null))}
-                        className="sm:hidden text-xl"
-                        aria-label={t("chat.back")}
-                        title={t("chat.back")}
-                    >
-                        ←
-                    </button>
-                    <span className="flex flex-col leading-tight">
-                        <span>{chat?.name}</span>
-                        <span className="text-xs font-normal">
-                            {peerTyping
-                                ? <span className="text-teal-300">{t("chat.typing")}</span>
-                                : chat?.online
-                                    ? <span className="text-green-400">● {t("chat.online")}</span>
-                                    : <span className="text-gray-400">● {lastSeenText ? t("chat.lastSeen", {time: lastSeenText}) : t("chat.offline")}</span>}
-                        </span>
-                    </span>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={onCall}
-                        title={t("chat.call")}
-                        aria-label={t("chat.call")}
-                        className="hover:opacity-80 text-xl"
-                    >
-                        📞
-                    </button>
-
-                    <button
-                        onClick={onToggleBlock}
-                        title={blockedByMe ? t("chat.unblock") : t("chat.block")}
-                        aria-label={blockedByMe ? t("chat.unblock") : t("chat.block")}
-                        className="hover:opacity-80 text-xl"
-                    >
-                        {blockedByMe ? "🔓" : "🚫"}
-                    </button>
-
-                    <button
-                        onClick={onDeleteChat}
-                        title={t("chat.deleteChat")}
-                        aria-label={t("chat.deleteChat")}
-                        className="text-red-400 hover:text-red-500 text-xl"
-                    >
-                        ✕
-                    </button>
-                </div>
-            </div>
+            <ChatHeader
+                chat={chat}
+                peerTyping={peerTyping}
+                lastSeenText={lastSeenText}
+                blockedByMe={blockedByMe}
+                onBack={() => dispatch(setSelectedChatId(null))}
+                onCall={onCall}
+                onToggleBlock={onToggleBlock}
+                onDeleteChat={onDeleteChat}
+            />
 
             {/* Messages */}
             <div ref={listRef} onScroll={onListScroll}
