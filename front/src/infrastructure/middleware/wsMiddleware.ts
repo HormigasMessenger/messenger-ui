@@ -12,12 +12,12 @@ import {DELAY_STEP_MS, MAX_RECONNECT_DELAY} from "@/shared/config/ws";
 import type {OutgoingWSMessage, WSMessage} from "../types.ts";
 import {fromWire, toWire} from "@/infrastructure/ws/frameBridge.ts";
 import {isNotLogged} from "@/shared/utils/checks";
-import type {User} from "@/features/auth/model/types.ts";
+import type {User} from "@/features/auth";
 import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import type {ChatSummary} from "@/entities/conversation";
 import {logger} from "@/shared/logger/logger.ts";
-import {kratos} from "@/features/auth/model/services/kratos.ts";
-import {clearUser} from "@/features/auth/slices/userSlice.ts";
+import {kratos} from "@/features/auth";
+import {clearUser} from "@/features/auth";
 
 
 type WSConnectAction = PayloadAction<{ url: string }, string, { shouldReconnect: boolean; }>

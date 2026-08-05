@@ -5,7 +5,7 @@ import {useDispatch, useSelector} from "react-redux";
 import type {AppDispatch, RootState} from "@/store/store.ts";
 import {chatApi, useCreateChatMutation} from "@/features/chat/rest/chatApi.ts";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
-import {idsDisplayName, useGetIdsUserQuery, useLazySearchIdsUsersQuery, type IdsUser} from "@/features/directory/idsApi.ts";
+import {idsDisplayName, useGetIdsUserQuery, useLazySearchIdsUsersQuery, type IdsUser} from "@/features/directory";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {resolveChatPair} from "@/features/contacts/model/resolveChatPair.ts";
 import {logger} from "@/shared/logger/logger.ts";

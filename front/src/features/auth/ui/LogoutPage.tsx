@@ -9,7 +9,7 @@ import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import {contactsApi} from "@/features/contacts/rest/contactsApi.ts";
 import {idsApi} from "@/features/directory/idsApi.ts";
 import {clearAllLocalData} from "@/features/chat/db/db.ts";
-import {removePushSubscription} from "@/features/notifications/push.ts";
+import {removePushSubscription} from "@/features/notifications";
 
 
 export default function LogoutPage() {

@@ -4,7 +4,7 @@ import {useGetChatsQuery} from "@/features/chat/rest/chatApi.ts";
 import type {ChatSummary} from "@/entities/conversation";
 import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
-import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory/idsApi.ts";
+import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
 import {useMemo} from "react";
 
 export function useContacts() {

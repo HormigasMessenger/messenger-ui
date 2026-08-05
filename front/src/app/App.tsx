@@ -5,13 +5,13 @@ import {useDispatch, useSelector} from "react-redux";
 import {Toaster} from "react-hot-toast";
 
 import type {RootState} from "@/store/store.ts";
-import {RequireAuth} from "@/features/auth/ui/RequireAuth";
+import {RequireAuth} from "@/features/auth/ui/RequireAuth.tsx";
 import {useWebSocketConnection} from "@/infrastructure/hooks/useWebSocketConnection.ts";
-import {markInitialized} from "@/features/auth/slices/userSlice.ts";
+import {markInitialized} from "@/features/auth";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {ErrorBoundary} from "@/shared/ui/ErrorBoundary.tsx";
-import {armNotificationPermissionOnGesture, requestNotificationPermission} from "@/features/notifications/desktopNotification.ts";
-import {ensurePushSubscription} from "@/features/notifications/push.ts";
+import {armNotificationPermissionOnGesture, requestNotificationPermission} from "@/features/notifications";
+import {ensurePushSubscription} from "@/features/notifications";
 
 // Route-level code splitting: keep the initial bundle small (each screen loads on demand).
 const Messenger = lazy(() => import("@/pages/Messenger"));

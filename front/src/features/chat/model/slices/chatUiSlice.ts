@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import {logger} from "@/shared/logger/logger.ts";
 import {isUlid} from "@/shared/ulid/ulid.ts";
-import {clearUser} from "@/features/auth/slices/userSlice.ts";
+import {clearUser} from "@/features/auth";
 
 interface ChatUiState {
     selectedChatId: string | null;

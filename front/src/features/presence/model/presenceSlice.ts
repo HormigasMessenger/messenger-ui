@@ -1,5 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import { clearUser } from "@/features/auth/slices/userSlice.ts";
+import { clearUser } from "@/features/auth";
 
 // Mirrors the backend ClientData carried in PRESENT_* frames (payload.body JSON).
 export type ClientData = {

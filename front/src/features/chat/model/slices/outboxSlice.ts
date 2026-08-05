@@ -1,7 +1,7 @@
 import {createSlice, type PayloadAction} from "@reduxjs/toolkit";
 import type {OutboxMessage, OutboxState} from "@/features/chat/model/types.ts";
 import {logger} from "@/shared/logger/logger.ts";
-import {clearUser} from "@/features/auth/slices/userSlice.ts";
+import {clearUser} from "@/features/auth";
 
 const initialState: OutboxState = {
     messages: [],
