@@ -194,6 +194,7 @@ function ChatWindow({
 
     const bottomRef = useRef<HTMLDivElement | null>(null);
     const listRef = useRef<HTMLDivElement | null>(null);
+    const contentRef = useRef<HTMLDivElement | null>(null);
     const inputRef = useRef<HTMLTextAreaElement | null>(null);
     // Track whether the user is at the bottom, so a new message doesn't yank them up out of the
     // history they're reading; unseenBelow drives the "↓ N new" jump button.
@@ -299,6 +300,22 @@ function ChatWindow({
         });
     }, [selectedChatId, shown.length]);
 
+    // Keep the view pinned to the newest message while we're at the bottom, even as content grows
+    // AFTER paint — image attachments fetch + decode async and gain height later, which otherwise
+    // pushes the last message up and strands the view mid-list ("scroll breaks after images load").
+    // A ResizeObserver on the content re-pins to bottom on any such growth, but ONLY while we're at
+    // the bottom (or still landing after open) — it never yanks a user who has scrolled up to read.
+    useEffect(() => {
+        const content = contentRef.current;
+        const el = listRef.current;
+        if (!content || !el || typeof ResizeObserver === "undefined") return;
+        const ro = new ResizeObserver(() => {
+            if (atBottomRef.current || pendingBottomRef.current) el.scrollTop = el.scrollHeight;
+        });
+        ro.observe(content);
+        return () => ro.disconnect();
+    }, []);
+
     // Follow to the bottom / count "unseen" ONLY when a message is APPENDED (newest id changes) —
     // never when older messages are PREPENDED (scroll-up load grows length but the last id is same),
     // which must not yank the view or inflate the "↓ N new" badge.
@@ -385,6 +402,7 @@ function ChatWindow({
             {/* Messages */}
             <div ref={listRef} onScroll={onListScroll}
                  className="flex-1 overflow-y-auto overscroll-contain p-4 bg-gray-300">
+                <div ref={contentRef}>
                 {/* History failed to load (server error) — show it, don't render a silent empty chat. */}
                 {historyError && (
                     <div className="mx-auto my-2 max-w-xs text-center text-sm bg-red-100 text-red-800 rounded-lg px-3 py-2">
@@ -498,6 +516,7 @@ function ChatWindow({
                     );
                 })}
                 <div ref={bottomRef}/>
+                </div>
             </div>
 
             {/* Jump-to-bottom when scrolled up and new messages arrived below */}
