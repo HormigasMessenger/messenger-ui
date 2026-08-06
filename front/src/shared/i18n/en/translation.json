@@ -49,6 +49,8 @@
     "blockedByPeer": "This contact has blocked you — you can't send messages",
     "connecting": "Connecting…",
     "noConnection": "No connection — reconnecting…",
+    "sessionElsewhere": "Session open in another window or device",
+    "reconnectHere": "Reconnect here",
     "deleteChat": "Delete chat",
     "deleteMessage": "Delete message",
     "attach": "Attach file",

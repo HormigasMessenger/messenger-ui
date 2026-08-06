@@ -40,6 +40,10 @@ let websocketMiddleware: typeof import("../wsMiddleware").websocketMiddleware;
 
 beforeEach(async () => {
     vi.useFakeTimers();
+    // Pin the reconnect jitter to its midpoint (factor 0.8 + 0.5*0.4 = 1.0) so scheduleReconnect's
+    // delay equals the raw backoff — otherwise the ±20% jitter would make these exact-advance
+    // timing assertions flaky. (In production the jitter decorrelates a mass reconnect wave.)
+    vi.spyOn(Math, "random").mockReturnValue(0.5);
     FakeWS.instances = [];
     vi.stubGlobal("WebSocket", FakeWS as unknown as typeof WebSocket);
     // Fresh module state per test (socket/rapidCycles/cooldownUntil are module-level).
@@ -49,6 +53,7 @@ beforeEach(async () => {
 afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
 });
 
 function dispatchConnect() {
@@ -71,13 +76,15 @@ describe("wsMiddleware reconnect circuit breaker", () => {
         expect(FakeWS.instances.length).toBe(2); // reconnected promptly
     });
 
-    it("does NOT auto-reconnect after a 4409 take-over close (session superseded elsewhere)", () => {
-        dispatchConnect();
+    it("does NOT auto-reconnect after a 4409 take-over close, and flags the session superseded", () => {
+        const store = dispatchConnect();
         FakeWS.instances[0].open();
         vi.advanceTimersByTime(1_000);
         FakeWS.instances[0].serverClose(4409); // backend evicted this (older) session
         vi.advanceTimersByTime(30_000);
         expect(FakeWS.instances.length).toBe(1); // stayed put — no reconnect loop
+        // The banner reads this flag to explain the take-over and offer "reconnect here".
+        expect(store.dispatch).toHaveBeenCalledWith(expect.objectContaining({type: "ws/superseded"}));
     });
 
     it("a plain abnormal close (1006 network drop) still auto-reconnects", () => {

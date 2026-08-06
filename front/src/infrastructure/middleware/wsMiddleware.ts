@@ -3,6 +3,7 @@ import {
     connected,
     connecting,
     disconnected,
+    superseded,
     error as wsError,
     incoming,
     outgoing,
@@ -66,8 +67,12 @@ export const websocketMiddleware: Middleware =
                 DELAY_STEP_MS * 2 ** reconnectAttempts,
                 MAX_RECONNECT_DELAY
             );
+            // ±20% jitter: a backend restart drops every client at once and a fixed backoff would make
+            // them all retry in lockstep (thundering herd). Spreading each client's delay randomly
+            // decorrelates the reconnect wave.
+            const jittered = backoff * (0.8 + Math.random() * 0.4);
             // Honor an active circuit-breaker cooldown: never attempt sooner than cooldownUntil.
-            const delay = Math.max(backoff, cooldownUntil - Date.now());
+            const delay = Math.max(jittered, cooldownUntil - Date.now());
 
             logger.debug(`🔁 WS reconnect #${reconnectAttempts} in ${delay}ms`);
             reconnectTimeout = setTimeout(() => {
@@ -138,6 +143,7 @@ export const websocketMiddleware: Middleware =
                 // tab regains focus → onWake) can still reconnect and take the session back.
                 if (event.code === WS_SUPERSEDED_CODE) {
                     logger.debug("WS superseded (4409): another session took over — not auto-reconnecting");
+                    dispatch(superseded());
                     return;
                 }
 

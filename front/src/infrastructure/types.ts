@@ -14,6 +14,10 @@ export type WebSocketState = {
     lastOutgoing: OutgoingWSMessage | null;
     error: string | null;
     epoch: number;   // incremented on each (re)connect; used by the outbox for duplicate-safe resend
+    // A newer session for this user (another tab/device) took over → the backend closed us with 4409
+    // and we deliberately stopped auto-reconnecting. Distinct from a plain "disconnected" so the UI can
+    // tell the user WHY they went offline and offer to take the session back here. Cleared on (re)connect.
+    superseded: boolean;
 };
 
 // After the frameBridge, WebRTC signaling arrives as a `call:*` frame; everything else
