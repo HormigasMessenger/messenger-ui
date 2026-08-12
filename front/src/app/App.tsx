@@ -16,6 +16,7 @@ import {ensurePushSubscription} from "@/features/notifications";
 // Route-level code splitting: keep the initial bundle small (each screen loads on demand).
 const Messenger = lazy(() => import("@/pages/Messenger"));
 const AddUser = lazy(() => import("@/features/contacts/ui/AddUser.tsx"));
+const CreateGroup = lazy(() => import("@/features/groups/ui/CreateGroup.tsx"));
 const LoginPage = lazy(() => import("@/features/auth/ui/LoginPage.tsx"));
 const LogoutPage = lazy(() => import("@/features/auth/ui/LogoutPage.tsx"));
 const RegistrationPage = lazy(() => import("@/features/auth/ui/RegistrationPage.tsx"));
@@ -57,6 +58,12 @@ function App() {
                         <Route path="/add" element={
                             <RequireAuth>
                                 <AddUser/>
+                            </RequireAuth>
+                        }
+                        />
+                        <Route path="/new-group" element={
+                            <RequireAuth>
+                                <CreateGroup/>
                             </RequireAuth>
                         }
                         />

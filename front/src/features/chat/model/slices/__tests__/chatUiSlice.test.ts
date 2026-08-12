@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import reducer, {setPeerLastReadId, setSelectedChatId} from "../chatUiSlice";
+import reducer, {setPeerLastReadId, setSelectedChatId, setTyping} from "../chatUiSlice";
 import {clearUser} from "@/features/auth/slices/userSlice";
 
 // Two real-shaped server ULIDs (26 Crockford chars); B is chronologically after A.
@@ -45,5 +45,32 @@ describe("chatUiSlice — peer read watermark (✓✓)", () => {
         s = reducer(s, clearUser());
         expect(s.peerLastReadIdByChat).toEqual({});
         expect(s.selectedChatId).toBeNull();
+    });
+});
+
+describe("chatUiSlice — typing (group author)", () => {
+    it("records the typing author id alongside the typing flag", () => {
+        const s = reducer(init(), setTyping({chatId: "c1", typing: true, author: "u2"}));
+        expect(s.typingByChat.c1).toBe(true);
+        expect(s.typingUserByChat.c1).toBe("u2");
+    });
+
+    it("clears both the flag and the author when typing stops", () => {
+        let s = reducer(init(), setTyping({chatId: "c1", typing: true, author: "u2"}));
+        s = reducer(s, setTyping({chatId: "c1", typing: false}));
+        expect(s.typingByChat.c1).toBe(false);
+        expect(s.typingUserByChat.c1).toBeUndefined();
+    });
+
+    it("works without an author (1:1 typing) — no author recorded", () => {
+        const s = reducer(init(), setTyping({chatId: "c1", typing: true}));
+        expect(s.typingByChat.c1).toBe(true);
+        expect(s.typingUserByChat.c1).toBeUndefined();
+    });
+
+    it("clears typing author on logout", () => {
+        let s = reducer(init(), setTyping({chatId: "c1", typing: true, author: "u2"}));
+        s = reducer(s, clearUser());
+        expect(s.typingUserByChat).toEqual({});
     });
 });

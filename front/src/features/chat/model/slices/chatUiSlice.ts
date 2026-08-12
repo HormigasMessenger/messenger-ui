@@ -12,6 +12,9 @@ interface ChatUiState {
     peerLastReadIdByChat: Record<string, string>;
     // Per-conversation: is the peer currently typing (set on TYPING_OUT, auto-cleared).
     typingByChat: Record<string, boolean>;
+    // Per-conversation: id of the last author seen typing (for GROUP headers → "<name> is typing").
+    // Set alongside typingByChat when TYPING_OUT carries a senderId; cleared with it. 1:1 ignores it.
+    typingUserByChat: Record<string, string>;
     // Per-conversation: has unread incoming message(s). Lives in the store (not component state)
     // so it survives re-renders/navigation and can be set from chatMiddleware.
     unreadByChat: Record<string, boolean>;
@@ -21,6 +24,7 @@ const initialState: ChatUiState = {
     selectedChatId: null,
     peerLastReadIdByChat: {},
     typingByChat: {},
+    typingUserByChat: {},
     unreadByChat: {},
 };
 
@@ -49,8 +53,11 @@ const chatUiSlice = createSlice({
             const cur = state.peerLastReadIdByChat[action.payload.chatId];
             if (!cur || next > cur) state.peerLastReadIdByChat[action.payload.chatId] = next;
         },
-        setTyping(state, action: PayloadAction<{ chatId: string; typing: boolean }>) {
-            state.typingByChat[action.payload.chatId] = action.payload.typing;
+        setTyping(state, action: PayloadAction<{ chatId: string; typing: boolean; author?: string }>) {
+            const {chatId, typing, author} = action.payload;
+            state.typingByChat[chatId] = typing;
+            if (typing && author) state.typingUserByChat[chatId] = author;
+            else if (!typing) delete state.typingUserByChat[chatId];
         },
         markChatUnread(state, action: PayloadAction<string>) {
             state.unreadByChat[action.payload] = true;
@@ -65,6 +72,7 @@ const chatUiSlice = createSlice({
             state.selectedChatId = null;
             state.peerLastReadIdByChat = {};
             state.typingByChat = {};
+            state.typingUserByChat = {};
             state.unreadByChat = {};
         });
     },

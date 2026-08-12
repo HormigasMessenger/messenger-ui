@@ -85,6 +85,23 @@
     "msgSendError": "Couldn't send — reopen the chat",
     "historyLoadError": "Couldn't load messages"
   },
+  "group": {
+    "newGroup": "New group",
+    "namePlaceholder": "Group name (optional)",
+    "searchMembers": "Search people",
+    "create": "Create group ({{n}})",
+    "members": "Members",
+    "membersCount": "{{n}} members",
+    "membersOnline": "{{n}} members · {{online}} online",
+    "addMember": "Add member",
+    "leave": "Leave group",
+    "typingBy": "{{name}} is typing…",
+    "tooFewMembers": "Add at least one member",
+    "tooManyMembers": "The group is full",
+    "createError": "Couldn't create the group",
+    "addError": "Couldn't add the member",
+    "leaveError": "Couldn't leave the group"
+  },
   "addUser": {
     "title": "New chat",
     "searchPlaceholder": "Search who to chat with (name, email, id)",

@@ -85,6 +85,23 @@
     "msgSendError": "No se pudo enviar — reabre el chat",
     "historyLoadError": "No se pudieron cargar los mensajes"
   },
+  "group": {
+    "newGroup": "Nuevo grupo",
+    "namePlaceholder": "Nombre del grupo (opcional)",
+    "searchMembers": "Buscar personas",
+    "create": "Crear grupo ({{n}})",
+    "members": "Miembros",
+    "membersCount": "{{n}} miembros",
+    "membersOnline": "{{n}} miembros · {{online}} en línea",
+    "addMember": "Añadir miembro",
+    "leave": "Salir del grupo",
+    "typingBy": "{{name}} está escribiendo…",
+    "tooFewMembers": "Añade al menos un miembro",
+    "tooManyMembers": "El grupo está lleno",
+    "createError": "No se pudo crear el grupo",
+    "addError": "No se pudo añadir el miembro",
+    "leaveError": "No se pudo salir del grupo"
+  },
   "addUser": {
     "title": "Nuevo chat",
     "searchPlaceholder": "Buscar con quién chatear (nombre, email, id)",

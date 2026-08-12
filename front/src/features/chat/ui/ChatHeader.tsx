@@ -9,6 +9,10 @@ import type {Contact} from "@/entities/contact";
 export function ChatHeader({
     chat,
     isGroup,
+    memberCount,
+    onlineCount,
+    typingName,
+    onOpenRoster,
     peerTyping,
     lastSeenText,
     blockedByMe,
@@ -19,6 +23,10 @@ export function ChatHeader({
 }: {
     chat: Contact | null;
     isGroup?: boolean;
+    memberCount?: number;
+    onlineCount?: number;
+    typingName?: string;
+    onOpenRoster?: () => void;
     peerTyping: boolean;
     lastSeenText: string | null;
     blockedByMe?: boolean;
@@ -31,7 +39,7 @@ export function ChatHeader({
     return (
         <div
             className="shrink-0 py-4 px-4 bg-teal-950 text-white border-b font-semibold flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
                 <button
                     onClick={onBack}
                     className="sm:hidden text-xl"
@@ -40,13 +48,17 @@ export function ChatHeader({
                 >
                     ←
                 </button>
-                <span className="flex flex-col leading-tight">
-                    <span>{isGroup ? `👥 ${chat?.name}` : chat?.name}</span>
-                    <span className="text-xs font-normal">
+                {/* In a group the name+subtitle open the roster panel (members / add / leave). */}
+                <span
+                    className={`flex flex-col leading-tight min-w-0 ${isGroup ? "cursor-pointer" : ""}`}
+                    onClick={isGroup ? onOpenRoster : undefined}
+                >
+                    <span className="truncate">{isGroup ? `👥 ${chat?.name}` : chat?.name}</span>
+                    <span className="text-xs font-normal truncate">
                         {isGroup
                             ? peerTyping
-                                ? <span className="text-teal-300">{t("chat.typing")}</span>
-                                : <span className="text-gray-400">{t("chat.groupChat")}</span>
+                                ? <span className="text-teal-300">{typingName ? t("group.typingBy", {name: typingName}) : t("chat.typing")}</span>
+                                : <span className="text-gray-400">{t("group.membersOnline", {n: memberCount ?? 0, online: onlineCount ?? 0})}</span>
                             : peerTyping
                                 ? <span className="text-teal-300">{t("chat.typing")}</span>
                                 : chat?.online
@@ -56,8 +68,19 @@ export function ChatHeader({
                 </span>
             </div>
 
-            <div className="flex items-center gap-4">
-                {/* Calls and per-pair block are 1:1 only — a group has no single peer. */}
+            <div className="flex items-center gap-4 shrink-0">
+                {/* Group: roster (members / add / leave). 1:1: call + per-pair block. */}
+                {isGroup && (
+                    <button
+                        onClick={onOpenRoster}
+                        title={t("group.members")}
+                        aria-label={t("group.members")}
+                        className="hover:opacity-80 text-xl"
+                    >
+                        ⓘ
+                    </button>
+                )}
+
                 {!isGroup && (
                     <button
                         onClick={onCall}

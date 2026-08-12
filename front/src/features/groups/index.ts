@@ -7,3 +7,5 @@ export {
     useLeaveGroupMutation,
 } from "./rest/groupApi.ts";
 export type {GroupMember} from "./rest/groupApi.ts";
+export {useGroupRoster} from "./hooks/useGroupRoster.ts";
+export {RosterPanel} from "./ui/RosterPanel.tsx";

@@ -144,10 +144,23 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             break;
         }
 
+        case "SERVICE_OUT": {
+            // Best-effort roster-change hint (ADR-024): payload.kind = member_joined | member_left for
+            // a group. Invalidate that group's roster so the RosterPanel / header re-fetch the
+            // authoritative membership (GET /api/groups/{id}/members). Non-durable — missed while
+            // offline; the self-heal in ChatWindow (unknown sender → refetch) covers the gaps.
+            const chatId = frame.conversationId;
+            const kind = (frame.payload as {kind?: string} | undefined)?.kind;
+            if (chatId && (kind === "member_joined" || kind === "member_left")) {
+                dispatch(chatApi.util.invalidateTags([{type: "Chat", id: `group-members:${chatId}`}]));
+            }
+            break;
+        }
+
         case "TYPING_OUT": {
             const chatId = frame.conversationId;
             if (!chatId) break;
-            dispatch(setTyping({chatId, typing: true}));
+            dispatch(setTyping({chatId, typing: true, author: frame.senderId}));
             // Auto-clear, replacing any pending timer for this chat (no unbounded timer pile-up).
             clearTypingTimer(chatId);
             typingTimers.set(

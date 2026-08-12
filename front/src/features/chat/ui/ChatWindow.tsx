@@ -8,6 +8,7 @@ import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {useWindowedHistory} from "@/features/chat/hooks/useWindowedHistory.ts";
 import {useGroupAuthorNames} from "@/features/chat/hooks/useGroupAuthorNames.ts";
+import {useGroupRoster, RosterPanel} from "@/features/groups";
 import {ChatHeader} from "./ChatHeader.tsx";
 import {Composer} from "./Composer.tsx";
 import {MessageList} from "./MessageList.tsx";
@@ -125,6 +126,15 @@ function ChatWindow({
     const {shown, hasEarlier, showEarlier, loadingOlder} = useWindowedHistory(messages, selectedChatId, listRef);
     const authorName = useGroupAuthorNames(messages, !!isGroup);
 
+    // GROUP roster (member/online counts, name resolver, self-heal refetch) + who's typing (by name).
+    const {memberCount, onlineCount, memberIds, nameOf: memberNameOf, refetch: refetchRoster} =
+        useGroupRoster(selectedChatId, !!isGroup);
+    const typingUserId = useSelector((state: RootState) =>
+        selectedChatId ? (state.chatUi.typingUserByChat[selectedChatId] ?? "") : ""
+    );
+    const typingName = isGroup && typingUserId ? memberNameOf(typingUserId) : undefined;
+    const [rosterOpen, setRosterOpen] = useState(false);
+
     // Opening a chat: reset trackers, arm the "land at bottom" flag, focus the composer (wide screens
     // only — don't pop the mobile keyboard on every open). LAYOUT effect (before paint) + defined
     // BEFORE the landing effect below, so pendingBottomRef is set before that effect reads it.
@@ -188,6 +198,15 @@ function ChatWindow({
         }
     }, [lastMessageId, messages.length]);
 
+    // Group roster self-heal: the best-effort MEMBER_JOINED/LEFT events are missed while offline, so
+    // a message from a sender not in the cached roster means our roster is stale — refetch it (the
+    // contract's "never infer membership from a message; re-fetch instead").
+    useEffect(() => {
+        if (!isGroup || memberIds.length === 0) return;
+        const roster = new Set(memberIds);
+        if (messages.some((m) => !m.fromMe && m.from && !roster.has(m.from))) refetchRoster();
+    }, [isGroup, memberIds, messages, refetchRoster]);
+
     // Open the window only when the conversation is actually in the list. Guards against a dangling
     // selectedChatId (e.g. a soft-deleted chat dropped from getChats on refetch) rendering an empty
     // window with no counterpart name and a dead composer.
@@ -202,6 +221,10 @@ function ChatWindow({
             <ChatHeader
                 chat={chat}
                 isGroup={isGroup}
+                memberCount={memberCount}
+                onlineCount={onlineCount}
+                typingName={typingName}
+                onOpenRoster={() => setRosterOpen(true)}
                 peerTyping={peerTyping}
                 lastSeenText={lastSeenText}
                 blockedByMe={blockedByMe}
@@ -246,6 +269,16 @@ function ChatWindow({
                 blocked={blocked}
                 blockedByPeer={blockedByPeer}
             />
+
+            {isGroup && rosterOpen && selectedChatId && (
+                <RosterPanel
+                    groupId={selectedChatId}
+                    groupName={chat?.name ?? ""}
+                    memberIds={memberIds}
+                    nameOf={memberNameOf}
+                    onClose={() => setRosterOpen(false)}
+                />
+            )}
         </main>
     );
 }
