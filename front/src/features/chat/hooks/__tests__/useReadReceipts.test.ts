@@ -92,6 +92,17 @@ describe("useReadReceipts", () => {
         expect(r[r.length - 1].correlationId).toBeUndefined();
     });
 
+    it("sends NO READ_IN for a group (no per-member read watermark) even with a boundary", async () => {
+        const groupSummary = (id: string) => (id === "c1" ? {counterpartId: "", kind: "group"} : undefined);
+        const {wrapper, sent} = await makeHarness({wsStatus: "connected", history: [{id: ULID}]});
+        const {result} = renderHook(
+            () => useReadReceipts({selectedChatId: "c1", newestMessageId: ULID, getSummary: groupSummary, markRead}), {wrapper});
+        act(() => { result.current.sendReadReceipt("c1"); });
+        act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+        expect(reads(sent)).toHaveLength(0);
+        expect(markRead).toHaveBeenCalledWith("c1"); // local unread clearing still happens
+    });
+
     it("sendReadReceipt (used by openChat) sends the current boundary on demand", async () => {
         const {wrapper, sent} = await makeHarness({wsStatus: "disconnected", history: [{id: ULID2}]});
         const {result} = renderHook(

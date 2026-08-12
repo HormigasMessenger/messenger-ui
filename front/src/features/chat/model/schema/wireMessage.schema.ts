@@ -34,10 +34,14 @@ export function parseWireMessage(data: unknown): WireMessage | null {
     return r.success ? r.data : null;
 }
 
-/** Build a `CHAT_IN` frame. The server overwrites `senderId` from the session identity. */
+/**
+ * Build a `CHAT_IN` frame. The server overwrites `senderId` from the session identity. `recipientId`
+ * is OMITTED when empty: a GROUP send carries only the conversationId (the server fans out to the
+ * roster and ignores recipientId) — sending an empty string could trip inbound validation.
+ */
 export function buildChatIn(p: {
     conversationId: string;
-    recipientId: string;
+    recipientId?: string;
     messageId: string;
     body: string;
     meta?: Record<string, string>;
@@ -45,7 +49,7 @@ export function buildChatIn(p: {
     return {
         type: "CHAT_IN",
         conversationId: p.conversationId,
-        recipientId: p.recipientId,
+        ...(p.recipientId ? { recipientId: p.recipientId } : {}),
         messageId: p.messageId,
         senderTimestamp: Date.now(),
         senderTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -83,24 +87,25 @@ export function buildChatAck(delivered: WireMessage): WireMessage {
  * history) — a server ULID only, monotonic (forward-only, enforced server-side). `messageId` is just
  * the frame's own event id. The peer then reads this back as `peerLastReadId` on GET /messages.
  */
-export function buildReadIn(conversationId: string, recipientId: string, lastReadMessageId?: string): WireMessage {
+export function buildReadIn(conversationId: string, recipientId?: string, lastReadMessageId?: string): WireMessage {
     return {
         type: "READ_IN",
         messageId: newId(),                  // the frame's own event id (not the boundary)
         correlationId: lastReadMessageId,     // ← the read boundary (largest rendered server ULID)
-        recipientId,
+        ...(recipientId ? { recipientId } : {}),
         conversationId,
         senderTimestamp: Date.now(),
         senderTimezone: tz(),
     };
 }
 
-/** Typing indicator (Strategy S; delivered live as TYPING_OUT, never stored). Needs a valid payload. */
-export function buildTypingIn(conversationId: string, recipientId: string): WireMessage {
+/** Typing indicator (Strategy S; delivered live as TYPING_OUT, never stored). Needs a valid payload.
+ *  `recipientId` is omitted for a GROUP (fanned out to the roster; conversationId is enough). */
+export function buildTypingIn(conversationId: string, recipientId?: string): WireMessage {
     return {
         type: "TYPING_IN",
         messageId: newId(),
-        recipientId,
+        ...(recipientId ? { recipientId } : {}),
         conversationId,
         senderTimestamp: Date.now(),
         senderTimezone: tz(),

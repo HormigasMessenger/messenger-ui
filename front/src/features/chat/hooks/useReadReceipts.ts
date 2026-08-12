@@ -22,7 +22,7 @@ import {isUlid} from "@/shared/ulid/ulid.ts";
 export function useReadReceipts(params: {
     selectedChatId: string | null;
     newestMessageId: string | null;
-    getSummary: (chatId: string) => {counterpartId: string} | null | undefined;
+    getSummary: (chatId: string) => {counterpartId: string; kind?: string} | null | undefined;
     markRead: (chatId: string) => void;
 }) {
     const {selectedChatId, newestMessageId, getSummary, markRead} = params;
@@ -45,10 +45,14 @@ export function useReadReceipts(params: {
     // Send a READ_IN for chatId carrying the newest rendered server ULID as the read boundary.
     // requireBoundary: skip when the boundary is unknown (used by the connect / newest triggers).
     const sendReadReceipt = useCallback((chatId: string, opts?: {requireBoundary?: boolean}) => {
+        const s = getSummary(chatId);
+        if (!s) return;
+        // Groups have no per-member read watermark (no ✓✓ aggregate) — READ_IN would be a no-op frame.
+        // Local unread clearing still happens via markRead (openChat/onVisible), independent of this.
+        if (s.kind === "group") return;
         const boundary = lastReadMessageId(chatId);
         if (opts?.requireBoundary && !boundary) return;
-        const s = getSummary(chatId);
-        if (s) dispatch({type: "ws/send", payload: buildReadIn(chatId, s.counterpartId, boundary)});
+        dispatch({type: "ws/send", payload: buildReadIn(chatId, s.counterpartId, boundary)});
     }, [lastReadMessageId, getSummary, dispatch]);
 
     // Deferred read: messages that arrived while the tab was hidden are marked read only when the
