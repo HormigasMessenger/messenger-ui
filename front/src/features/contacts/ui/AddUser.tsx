@@ -112,6 +112,7 @@ export default function AddContactPage() {
                     if (draft && !draft.some((s) => s.conversationId === conv.id)) {
                         draft.push({
                             conversationId: conv.id,
+                            kind: "direct",
                             counterpartId,
                             orderId: conv.metadata?.orderId,
                             blocked: false,

@@ -1,0 +1,9 @@
+// Public API of the groups feature (ADR-024 group chats).
+export {
+    useCreateGroupMutation,
+    useGetGroupMembersQuery,
+    useLazyGetGroupMembersQuery,
+    useAddGroupMemberMutation,
+    useLeaveGroupMutation,
+} from "./rest/groupApi.ts";
+export type {GroupMember} from "./rest/groupApi.ts";
