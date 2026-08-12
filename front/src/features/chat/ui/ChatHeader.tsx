@@ -103,14 +103,18 @@ export function ChatHeader({
                     </button>
                 )}
 
-                <button
-                    onClick={onDeleteChat}
-                    title={t("chat.deleteChat")}
-                    aria-label={t("chat.deleteChat")}
-                    className="text-red-400 hover:text-red-500 text-xl"
-                >
-                    ✕
-                </button>
+                {/* "Delete chat" is a 1:1 soft-delete (DELETE /api/chats/{id}); for a group the terminal
+                    action is "leave", which lives in the roster panel — so no ✕ here for groups. */}
+                {!isGroup && (
+                    <button
+                        onClick={onDeleteChat}
+                        title={t("chat.deleteChat")}
+                        aria-label={t("chat.deleteChat")}
+                        className="text-red-400 hover:text-red-500 text-xl"
+                    >
+                        ✕
+                    </button>
+                )}
             </div>
         </div>
     );

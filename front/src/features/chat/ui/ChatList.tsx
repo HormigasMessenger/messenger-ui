@@ -120,7 +120,7 @@ function ChatList({
                             placeholder={t("chat.searchContact")}
                             value={search}
                             onChange={(e) => setSearch(e.target.value)}
-                            className="flex-1 rounded-full px-4 py-2 text-base bg-white border focus:outline-none"
+                            className="flex-1 min-w-0 rounded-full px-4 py-2 text-base bg-white border focus:outline-none"
                         />
                     </div>
                 </div>

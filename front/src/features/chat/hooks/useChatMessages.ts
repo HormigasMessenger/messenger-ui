@@ -21,7 +21,9 @@ export function useChatMessages() {
     );
 
     /* ======================
-       RTK Query: history
+       RTK Query: history — a group is fetched the SAME way as any conversation (its id IS a
+       conversation id). getChatHistory maps a 404 (a conversation with no message backing yet) to an
+       empty list, so it never leaves RTK's `data` holding the PREVIOUS chat's rows.
     ====================== */
     const {data = [], isLoading, isError, error} = chatApi.useGetChatHistoryQuery(
         selectedChatId ? {myId, chatId: selectedChatId} : skipToken
