@@ -52,6 +52,27 @@ describe("MessageBubble delivery/read indicator", () => {
     });
 });
 
+describe("MessageBubble discard / delete affordances", () => {
+    it("a pending message can be discarded from the queue (🗑 → onDiscardMessage)", () => {
+        const onDiscardMessage = vi.fn();
+        const c = renderBubble({status: "pending", onDiscardMessage});
+        const btn = c.querySelector("button[aria-label='chat.discard']") as HTMLButtonElement;
+        expect(btn).toBeTruthy();
+        btn.click();
+        expect(onDiscardMessage).toHaveBeenCalledWith(ULID_A);
+    });
+
+    it("does NOT show the server-side delete on an un-sent (pending) message", () => {
+        const c = renderBubble({status: "pending", onDeleteMessage: vi.fn(), onDiscardMessage: vi.fn()});
+        expect(c.querySelector("button[aria-label='chat.deleteMessage']")).toBeNull();
+    });
+
+    it("shows the server-side delete only on an actually-sent message (no outbox status)", () => {
+        const c = renderBubble({onDeleteMessage: vi.fn()}); // status undefined = sent/server row
+        expect(c.querySelector("button[aria-label='chat.deleteMessage']")).toBeTruthy();
+    });
+});
+
 describe("MessageBubble in a GROUP", () => {
     it("labels the author on a peer's bubble", () => {
         const c = renderBubble({msg: msg({fromMe: false, from: "u2"}), isGroup: true, authorName: "Alice"});

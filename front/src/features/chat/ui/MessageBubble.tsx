@@ -94,7 +94,16 @@ export function MessageBubble({
                 }
                 if (status === "pending" || status === "sending") {
                     return (
-                        <span className="ml-2 text-[10px] align-bottom opacity-70" title={t("chat.sending")}>🕐</span>
+                        <span className="ml-2 text-[10px] align-bottom">
+                            <span title={t("chat.sending")} className="opacity-70">🕐</span>
+                            {/* Discard an un-sent message: drop it from the send queue (not a server
+                                delete — it was never accepted). */}
+                            {onDiscardMessage && (
+                                <button onClick={() => onDiscardMessage(msg.id)} title={t("chat.discard")}
+                                        aria-label={t("chat.discard")}
+                                        className="ml-1 opacity-70 hover:opacity-100">🗑</button>
+                            )}
+                        </span>
                     );
                 }
                 // Per-message read state: read iff this message's id is at/below the peer's read
@@ -112,7 +121,9 @@ export function MessageBubble({
                     </span>
                 );
             })()}
-            {onDeleteMessage && msg.fromMe && (
+            {/* Server-side "delete for me" — only for an actually-sent message (no outbox status).
+                A pending/sending/failed one is discarded from the queue via the status block above. */}
+            {onDeleteMessage && msg.fromMe && !status && (
                 <button
                     onClick={() => onDeleteMessage(msg.id)}
                     title={t("chat.deleteMessage")}
