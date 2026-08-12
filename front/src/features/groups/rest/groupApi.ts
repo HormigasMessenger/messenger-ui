@@ -3,6 +3,10 @@ import {chatApi} from "@/features/chat/rest/chatApi.ts";
 /** A group roster entry (GET /api/groups/{id}/members). Flat roles in v1. */
 export type GroupMember = { userId: string; role: string };
 
+/** A row of GET /api/groups (the caller's groups) — the group list is its OWN resource (the deployed
+ *  backend does NOT union groups into /api/chats; /api/chats is DIRECT-only). */
+export type GroupListItem = { id: string; kind: string; name?: string; memberCount: number; updatedAt?: string };
+
 /** Backend Conversation returned by POST /api/groups (a group: null pair, name in metadata.name). */
 type CreatedGroup = { id: string; metadata?: Record<string, string> | null };
 
@@ -14,6 +18,14 @@ type CreatedGroup = { id: string; metadata?: Record<string, string> | null };
  */
 export const groupApi = chatApi.injectEndpoints({
     endpoints: (builder) => ({
+        // The caller's groups (GET /api/groups) — a separate resource from /api/chats (which is
+        // DIRECT-only in the deployed backend). Shares the "Chats" tag so create/leave refetch it.
+        getGroups: builder.query<GroupListItem[], void>({
+            query: () => `/groups`,
+            transformResponse: (r: unknown): GroupListItem[] => (Array.isArray(r) ? r as GroupListItem[] : []),
+            providesTags: ["Chats"],
+        }),
+
         // Create a group (creator + members). Any authenticated user may create; not idempotent (a fresh
         // id each call). 422 if <1 other member, 413 over the size cap. Refetch the list so it appears.
         createGroup: builder.mutation<CreatedGroup, { memberIds: string[]; name?: string }>({
@@ -50,6 +62,7 @@ export const groupApi = chatApi.injectEndpoints({
 });
 
 export const {
+    useGetGroupsQuery,
     useCreateGroupMutation,
     useGetGroupMembersQuery,
     useLazyGetGroupMembersQuery,

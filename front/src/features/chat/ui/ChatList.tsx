@@ -97,7 +97,7 @@ function ChatList({
                             onClick={() => navigate("/add")}
                             title={t("chat.addContact")}
                             aria-label={t("chat.addContact")}
-                            className="w-10 h-10 flex items-center justify-center rounded-full
+                            className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full
                             bg-teal-950 border-2 text-white
                             border-l-gray-300 border-t-gray-200 border-r-gray-400 border-b-gray-500
                             opacity-100 hover:opacity-85"
@@ -108,7 +108,7 @@ function ChatList({
                             onClick={() => navigate("/new-group")}
                             title={t("group.newGroup")}
                             aria-label={t("group.newGroup")}
-                            className="w-10 h-10 flex items-center justify-center rounded-full
+                            className="shrink-0 w-10 h-10 flex items-center justify-center rounded-full
                             bg-teal-950 border-2 text-white
                             border-l-gray-300 border-t-gray-200 border-r-gray-400 border-b-gray-500
                             opacity-100 hover:opacity-85"

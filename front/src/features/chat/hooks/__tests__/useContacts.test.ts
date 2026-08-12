@@ -4,6 +4,7 @@ import { useContacts } from "../../../contacts/hooks/useContacts.ts";
 import { useSelector } from "react-redux";
 import { useGetChatsQuery } from "@/features/chat/rest/chatApi";
 import { useGetIdsUsersByIdsQuery } from "@/features/directory/idsApi";
+import { useGetGroupsQuery } from "@/features/groups";
 
 // useContacts now derives the chat list from GET /chats (ChatSummary[]) and resolves counterpart
 // names via the IDS directory by id (useGetIdsUsersByIdsQuery), with presence as a fallback.
@@ -15,6 +16,9 @@ vi.mock("react-redux", () => ({
     useSelector: vi.fn((sel: (s: unknown) => unknown) => sel(fakeState)),
 }));
 vi.mock("@/features/chat/rest/chatApi", () => ({ useGetChatsQuery: vi.fn() }));
+// Mock the groups feature so importing it here doesn't pull in groupApi's chatApi.injectEndpoints
+// (chatApi is itself mocked to a stub above). useContacts merges GET /api/groups into the list.
+vi.mock("@/features/groups", () => ({ useGetGroupsQuery: vi.fn() }));
 vi.mock("@/features/directory/idsApi", async (importOriginal) => {
     const actual = await importOriginal<typeof import("@/features/directory/idsApi")>();
     return { ...actual, useGetIdsUsersByIdsQuery: vi.fn() };
@@ -26,6 +30,8 @@ describe("useContacts", () => {
         (useSelector as unknown as Mock).mockImplementation(
             (sel: (s: unknown) => unknown) => sel(fakeState)
         );
+        // Default: no groups (tests that care set their own return).
+        (useGetGroupsQuery as unknown as Mock).mockReturnValue({ data: [], isLoading: false });
     });
 
     it("returns empty contacts while the chat list is loading", () => {
@@ -72,19 +78,26 @@ describe("useContacts", () => {
         ]);
     });
 
-    it("maps a GROUP summary to a group contact (name from summary, no presence, no IDS lookup)", () => {
+    it("merges GET /api/groups into the list as group contacts (separate resource from /api/chats)", () => {
         (useGetChatsQuery as unknown as Mock).mockReturnValue({
-            data: [{conversationId: "g1", kind: "group", counterpartId: "", name: "Squad", blocked: false}],
+            data: [{conversationId: "c1", kind: "direct", counterpartId: "user2", blocked: false}],
             isLoading: false,
             isError: false,
+        });
+        (useGetGroupsQuery as unknown as Mock).mockReturnValue({
+            data: [{id: "g1", kind: "GROUP", name: "Squad", memberCount: 3}],
+            isLoading: false,
         });
         (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({data: {}});
 
         const {result} = renderHook(() => useContacts());
 
         expect(result.current.contacts).toEqual([
+            {id: "c1", kind: "direct", name: "user2", last: "", email: "user2", online: false},
             {id: "g1", kind: "group", name: "Squad", last: "", email: "", online: false},
         ]);
+        // getSummary resolves the group too (so opening it works: kind group, no counterpart).
+        expect(result.current.getSummary("g1")).toMatchObject({kind: "group", counterpartId: ""});
     });
 
     it("surfaces the chat-list error flag", () => {

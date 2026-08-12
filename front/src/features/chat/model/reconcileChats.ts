@@ -1,5 +1,25 @@
 import type {ChatSummary} from "@/entities/conversation";
 
+/** A row of GET /api/groups (the group list is its own resource, separate from DIRECT /api/chats). */
+export type RawGroupListItem = {id: string; name?: string; memberCount?: number};
+
+/**
+ * Map a GET /api/groups row to a chat-list ChatSummary. Groups are a SEPARATE resource in the deployed
+ * backend (not unioned into /api/chats), so the frontend merges these into the list itself.
+ */
+export function toGroupSummary(g: RawGroupListItem): ChatSummary {
+    return {
+        conversationId: g.id,
+        kind: "group",
+        counterpartId: "",
+        name: g.name,
+        memberIds: [],
+        blocked: false,
+        blockedByMe: false,
+        blockedByPeer: false,
+    };
+}
+
 /**
  * Raw backend Conversation (GET /api/chats). The list spans two domains merged server-side (ADR-024,
  * ChatLifecycle.listChats): DIRECT chats ∪ the caller's active GROUPS. A DIRECT row carries the

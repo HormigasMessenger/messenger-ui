@@ -80,18 +80,16 @@ export default function CreateGroup() {
     if (isNotLogged(myId)) return null;
 
     return (
-        <div className="min-h-dvh flex flex-col bg-gray-200">
-            <div className="bg-teal-950 text-white px-4 py-3 flex items-center gap-3">
-                <button onClick={() => navigate("/")} aria-label={t("chat.back")} className="text-xl">←</button>
-                <span className="font-semibold">{t("group.newGroup")}</span>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-200/80 backdrop-blur-sm p-4">
+            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-6 flex flex-col gap-4">
+                <h2 className="text-xl font-semibold text-center">{t("group.newGroup")}</h2>
 
-            <div className="p-4 flex flex-col gap-3 flex-1 min-h-0">
                 <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={t("group.namePlaceholder")}
-                    className="rounded-full px-4 py-2 bg-white border focus:outline-none"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                    autoFocus
                 />
 
                 {/* Selected chips */}
@@ -110,38 +108,58 @@ export default function CreateGroup() {
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder={t("group.searchMembers")}
-                    className="rounded-full px-4 py-2 bg-white border focus:outline-none"
+                    className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-teal-600"
                 />
 
-                <div className="flex-1 overflow-y-auto rounded-lg bg-white">
-                    {isError && <div className="p-3 text-sm text-red-700">{t("chat.searchError", {defaultValue: "Search failed"})}</div>}
-                    {isFetching && visible.length === 0 && <div className="p-3 text-sm text-gray-500">…</div>}
+                <div className="max-h-72 overflow-y-auto flex flex-col gap-1.5">
+                    {debounced.length < MIN_CHARS && (
+                        <p className="text-sm text-gray-500 text-center py-4">{t("addUser.minChars", {n: MIN_CHARS})}</p>
+                    )}
+                    {debounced.length >= MIN_CHARS && isError && (
+                        <p className="text-sm text-red-600 text-center py-4">{t("addUser.searchError")}</p>
+                    )}
+                    {debounced.length >= MIN_CHARS && !isError && !isFetching && visible.length === 0 && (
+                        <p className="text-sm text-gray-500 text-center py-4">{t("addUser.noResults")}</p>
+                    )}
                     {visible.map((u) => {
+                        const dn = idsDisplayName(u);
                         const picked = !!selected[u.id];
                         return (
-                            <div key={u.id} onClick={() => toggle(u)}
-                                 className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-100 ${picked ? "bg-teal-50" : ""}`}>
-                                <span className="w-10 h-10 rounded-full bg-teal-950 text-white text-sm flex items-center justify-center">
-                                    {initials(idsDisplayName(u))}
+                            <button
+                                key={u.id}
+                                onClick={() => toggle(u)}
+                                className={`flex items-center gap-3 border rounded-lg px-3 py-2 text-left hover:bg-gray-50
+                                ${picked ? "bg-teal-50 border-teal-300" : ""}`}
+                            >
+                                <span className="w-9 h-9 rounded-full bg-teal-950 text-white text-sm flex items-center justify-center shrink-0">
+                                    {initials(dn)}
                                 </span>
-                                <div className="min-w-0 flex-1">
-                                    <div className="truncate font-medium text-gray-800">{idsDisplayName(u)}</div>
-                                    <div className="truncate text-sm text-gray-500">{u.email}</div>
-                                </div>
-                                <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-xs ${picked ? "bg-teal-700 text-white border-teal-700" : "border-gray-400"}`}>
+                                <span className="flex flex-col min-w-0 flex-1">
+                                    <span className="font-medium truncate">{dn}</span>
+                                    {u.email && <span className="text-xs text-gray-500 truncate">{u.email}</span>}
+                                </span>
+                                <span className={`w-5 h-5 rounded-full border flex items-center justify-center text-xs shrink-0
+                                ${picked ? "bg-teal-700 text-white border-teal-700" : "border-gray-400"}`}>
                                     {picked ? "✓" : ""}
                                 </span>
-                            </div>
+                            </button>
                         );
                     })}
+                    {isFetching && <p className="text-sm text-gray-500 text-center py-2">{t("addUser.searching")}</p>}
                 </div>
 
                 <button
                     onClick={create}
                     disabled={selectedList.length < 1 || creating}
-                    className="bg-teal-950 text-white rounded-full py-3 font-medium disabled:opacity-50"
+                    className="w-full bg-teal-950 text-white py-2 rounded-lg font-medium hover:bg-teal-900 transition disabled:opacity-50"
                 >
                     {creating ? t("loading") : t("group.create", {n: selectedList.length})}
+                </button>
+                <button
+                    onClick={() => navigate(-1)}
+                    className="w-full border border-gray-300 py-2 rounded-lg hover:bg-gray-100 transition"
+                >
+                    {t("addUser.cancel")}
                 </button>
             </div>
         </div>

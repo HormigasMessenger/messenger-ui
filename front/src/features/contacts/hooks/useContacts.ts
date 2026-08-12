@@ -5,6 +5,8 @@ import type {ChatSummary} from "@/entities/conversation";
 import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
+import {useGetGroupsQuery} from "@/features/groups";
+import {toGroupSummary} from "@/features/chat/model/reconcileChats.ts";
 import {useMemo} from "react";
 import {useTranslation} from "react-i18next";
 
@@ -14,7 +16,15 @@ export function useContacts() {
     const presence = useSelector((state: RootState) => state.presence.byId);
     const skip = isNotLogged(myId);
 
-    const {data: summaries = [], isLoading, isError} = useGetChatsQuery({myId}, {skip});
+    // The chat list spans TWO resources in the deployed backend (variant A — separate, not unioned):
+    // DIRECT chats (GET /api/chats) and GROUPS (GET /api/groups). Fetch both and merge.
+    const {data: directSummaries = [], isLoading: chatsLoading, isError} = useGetChatsQuery({myId}, {skip});
+    const {data: groupItems = [], isLoading: groupsLoading} = useGetGroupsQuery(undefined, {skip});
+    const isLoading = chatsLoading || groupsLoading;
+    const summaries = useMemo(
+        () => [...directSummaries, ...groupItems.map(toGroupSummary)],
+        [directSummaries, groupItems],
+    );
 
     // Resolve only the 1:1 chat counterparts by id (stable, de-duped key). Groups carry no counterpart
     // (counterpartId ""), so they're excluded — a group's name comes from its own summary.
