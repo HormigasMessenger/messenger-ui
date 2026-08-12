@@ -8,6 +8,7 @@ import type {Contact} from "@/entities/contact";
  */
 export function ChatHeader({
     chat,
+    isGroup,
     peerTyping,
     lastSeenText,
     blockedByMe,
@@ -17,6 +18,7 @@ export function ChatHeader({
     onDeleteChat,
 }: {
     chat: Contact | null;
+    isGroup?: boolean;
     peerTyping: boolean;
     lastSeenText: string | null;
     blockedByMe?: boolean;
@@ -39,35 +41,44 @@ export function ChatHeader({
                     ←
                 </button>
                 <span className="flex flex-col leading-tight">
-                    <span>{chat?.name}</span>
+                    <span>{isGroup ? `👥 ${chat?.name}` : chat?.name}</span>
                     <span className="text-xs font-normal">
-                        {peerTyping
-                            ? <span className="text-teal-300">{t("chat.typing")}</span>
-                            : chat?.online
-                                ? <span className="text-green-400">● {t("chat.online")}</span>
-                                : <span className="text-gray-400">● {lastSeenText ? t("chat.lastSeen", {time: lastSeenText}) : t("chat.offline")}</span>}
+                        {isGroup
+                            ? peerTyping
+                                ? <span className="text-teal-300">{t("chat.typing")}</span>
+                                : <span className="text-gray-400">{t("chat.groupChat")}</span>
+                            : peerTyping
+                                ? <span className="text-teal-300">{t("chat.typing")}</span>
+                                : chat?.online
+                                    ? <span className="text-green-400">● {t("chat.online")}</span>
+                                    : <span className="text-gray-400">● {lastSeenText ? t("chat.lastSeen", {time: lastSeenText}) : t("chat.offline")}</span>}
                     </span>
                 </span>
             </div>
 
             <div className="flex items-center gap-4">
-                <button
-                    onClick={onCall}
-                    title={t("chat.call")}
-                    aria-label={t("chat.call")}
-                    className="hover:opacity-80 text-xl"
-                >
-                    📞
-                </button>
+                {/* Calls and per-pair block are 1:1 only — a group has no single peer. */}
+                {!isGroup && (
+                    <button
+                        onClick={onCall}
+                        title={t("chat.call")}
+                        aria-label={t("chat.call")}
+                        className="hover:opacity-80 text-xl"
+                    >
+                        📞
+                    </button>
+                )}
 
-                <button
-                    onClick={onToggleBlock}
-                    title={blockedByMe ? t("chat.unblock") : t("chat.block")}
-                    aria-label={blockedByMe ? t("chat.unblock") : t("chat.block")}
-                    className="hover:opacity-80 text-xl"
-                >
-                    {blockedByMe ? "🔓" : "🚫"}
-                </button>
+                {!isGroup && (
+                    <button
+                        onClick={onToggleBlock}
+                        title={blockedByMe ? t("chat.unblock") : t("chat.block")}
+                        aria-label={blockedByMe ? t("chat.unblock") : t("chat.block")}
+                        className="hover:opacity-80 text-xl"
+                    >
+                        {blockedByMe ? "🔓" : "🚫"}
+                    </button>
+                )}
 
                 <button
                     onClick={onDeleteChat}

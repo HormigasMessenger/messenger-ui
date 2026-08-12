@@ -43,6 +43,7 @@ export type OutboxState = {
 export type ChatMessageView = {
     id: MessageId;
     fromMe: boolean;
+    from: string;        // author (senderId) — labels the sender in a GROUP; ignored in 1:1
     text: string;
     status: ChatMessageStatus;
     createdAt: number;   // epoch ms — compared against the peer read watermark for per-message ✓✓

@@ -51,6 +51,8 @@
     "noConnection": "Sin conexión — reconectando…",
     "sessionElsewhere": "Sesión abierta en otra ventana o dispositivo",
     "reconnectHere": "Reconectar aquí",
+    "group": "Grupo",
+    "groupChat": "Chat grupal",
     "deleteChat": "Eliminar chat",
     "deleteMessage": "Eliminar mensaje",
     "attach": "Adjuntar archivo",

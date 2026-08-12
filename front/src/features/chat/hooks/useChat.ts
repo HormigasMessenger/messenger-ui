@@ -77,6 +77,12 @@ export function useChat() {
         () => (selectedChatId ? getSummary(selectedChatId)?.counterpartId ?? null : null),
         [selectedChatId, getSummary]
     );
+    // Whether the open conversation is a GROUP — drives group rendering (author labels, no ✓✓,
+    // no call/block, group header) across ChatWindow.
+    const selectedIsGroup = useMemo(
+        () => (selectedChatId ? getSummary(selectedChatId)?.kind === "group" : false),
+        [selectedChatId, getSummary]
+    );
     // Moderation (block flags + toggleBlock + deleteMessage) lives in its own hook.
     const {selectedBlocked, selectedBlockedByMe, selectedBlockedByPeer, toggleBlock, deleteMessage} =
         useChatModeration({selectedChatId, getSummary});
@@ -121,6 +127,7 @@ export function useChat() {
         selectedChat,
         selectedChatId,
         selectedCounterpartId,
+        selectedIsGroup,
         selectedBlocked,
         selectedBlockedByMe,
         selectedBlockedByPeer,

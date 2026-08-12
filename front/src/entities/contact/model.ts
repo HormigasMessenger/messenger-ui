@@ -9,6 +9,9 @@ export const ContactSchema = z.object({
     last: z.string().min(0),
     email: z.email().min(1),
     online: z.boolean(),
+    // GROUP chat-list items reuse this entity (id = conversationId). "group" lets the list/header
+    // branch (group icon, no presence dot/last-seen, no call/block); absent/"direct" = a 1:1 peer.
+    kind: z.enum(["direct", "group"]).optional(),
 });
 
 export type Contact = z.infer<typeof ContactSchema>;

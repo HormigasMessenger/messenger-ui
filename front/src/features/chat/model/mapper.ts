@@ -17,6 +17,7 @@ export function toChatMessageView(
     return {
         id: msg.id,
         fromMe: msg.from === myId,
+        from: msg.from,
         text: msg.text,
         status: msg.status,
         createdAt: msg.createdAt.getTime(),

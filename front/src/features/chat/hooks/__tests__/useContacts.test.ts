@@ -10,6 +10,7 @@ import { useGetIdsUsersByIdsQuery } from "@/features/directory/idsApi";
 // useSelector is stubbed against a fake state so the hook's myId / presence selectors resolve.
 const fakeState = { user: { id: "user1" }, presence: { byId: {} } };
 
+vi.mock("react-i18next", () => ({useTranslation: () => ({t: (k: string) => k})}));
 vi.mock("react-redux", () => ({
     useSelector: vi.fn((sel: (s: unknown) => unknown) => sel(fakeState)),
 }));
@@ -49,7 +50,7 @@ describe("useContacts", () => {
         const { result } = renderHook(() => useContacts());
 
         expect(result.current.contacts).toEqual([
-            { id: "c1", name: "Bob", last: "", email: "user2", online: false },
+            { id: "c1", kind: "direct", name: "Bob", last: "", email: "user2", online: false },
         ]);
         expect(result.current.getContactById("c1")?.name).toBe("Bob");
         expect(result.current.getContactByName("Bob")?.id).toBe("c1");
@@ -67,7 +68,22 @@ describe("useContacts", () => {
         const { result } = renderHook(() => useContacts());
 
         expect(result.current.contacts).toEqual([
-            { id: "c2", name: "user9", last: "", email: "user9", online: false },
+            { id: "c2", kind: "direct", name: "user9", last: "", email: "user9", online: false },
+        ]);
+    });
+
+    it("maps a GROUP summary to a group contact (name from summary, no presence, no IDS lookup)", () => {
+        (useGetChatsQuery as unknown as Mock).mockReturnValue({
+            data: [{conversationId: "g1", kind: "group", counterpartId: "", name: "Squad", blocked: false}],
+            isLoading: false,
+            isError: false,
+        });
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({data: {}});
+
+        const {result} = renderHook(() => useContacts());
+
+        expect(result.current.contacts).toEqual([
+            {id: "g1", kind: "group", name: "Squad", last: "", email: "", online: false},
         ]);
     });
 

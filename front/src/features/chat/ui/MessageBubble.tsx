@@ -8,6 +8,7 @@ export interface ChatMessageView {
     id: string;
     text: string;
     fromMe: boolean;
+    from?: string;   // author (senderId) — used to label the sender in a GROUP
     createdAt: number;
     kind?: string;
     meta?: Record<string, string>;
@@ -24,6 +25,8 @@ export function MessageBubble({
     bubbleMt,
     peerLastReadId,
     status,
+    isGroup,
+    authorName,
     onResolveAttachment,
     onDownloadAttachment,
     onDeleteMessage,
@@ -34,6 +37,8 @@ export function MessageBubble({
     bubbleMt: string;
     peerLastReadId: string;
     status?: string;
+    isGroup?: boolean;      // GROUP: label the author on peers' bubbles + no ✓✓ (no read-by-N aggregate)
+    authorName?: string;    // resolved display name of msg.from, for a peer's bubble in a group
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
     onDownloadAttachment?: (attachmentId: string) => void;
     onDeleteMessage?: (id: string) => void;
@@ -49,6 +54,10 @@ export function MessageBubble({
                     : "mr-auto bg-white text-teal-950 rounded-bl-none"
             }`}
         >
+            {/* Author label — only on a peer's bubble in a GROUP (in 1:1 the sender is obvious). */}
+            {isGroup && !msg.fromMe && authorName && (
+                <div className="text-[11px] font-semibold text-teal-700 mb-0.5">{authorName}</div>
+            )}
             {msg.kind === "attachment" ? (
                 (msg.meta?.contentType ?? "").startsWith("image/") ? (
                     <AttachmentImage
@@ -94,7 +103,8 @@ export function MessageBubble({
                 // id — comparing that against a ULID boundary is meaningless (nanoid's first char lands on
                 // either side of a ULID's at random), which produced intermittent false ✓✓. Guard with
                 // isUlid: no server id == not yet stored == cannot be read.
-                const isRead = !!peerLastReadId && isUlid(msg.id) && msg.id <= peerLastReadId;
+                // Groups have no peer read watermark (read-by-N is a later backend phase) → always ✓, never ✓✓.
+                const isRead = !isGroup && !!peerLastReadId && isUlid(msg.id) && msg.id <= peerLastReadId;
                 return (
                     <span className="ml-2 text-[10px] align-bottom opacity-70"
                           title={isRead ? t("chat.read") : t("chat.sent")}>

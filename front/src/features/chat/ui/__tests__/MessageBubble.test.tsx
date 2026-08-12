@@ -51,3 +51,26 @@ describe("MessageBubble delivery/read indicator", () => {
         expect(c.textContent).not.toContain("🕐");
     });
 });
+
+describe("MessageBubble in a GROUP", () => {
+    it("labels the author on a peer's bubble", () => {
+        const c = renderBubble({msg: msg({fromMe: false, from: "u2"}), isGroup: true, authorName: "Alice"});
+        expect(c.textContent).toContain("Alice");
+    });
+
+    it("does NOT label the author on my own bubble", () => {
+        const c = renderBubble({msg: msg({fromMe: true, from: "me"}), isGroup: true, authorName: "Me"});
+        expect(c.textContent).not.toContain("Me");
+    });
+
+    it("does NOT label the author in a 1:1 chat", () => {
+        const c = renderBubble({msg: msg({fromMe: false, from: "u2"}), authorName: "Alice"});
+        expect(c.textContent).not.toContain("Alice");
+    });
+
+    it("never shows ✓✓ in a group — no read-by-N aggregate (single ✓ even past a boundary)", () => {
+        const c = renderBubble({isGroup: true, peerLastReadId: ULID_B}); // B >= A would be ✓✓ in 1:1
+        expect(c.textContent).toContain("✓");
+        expect(c.textContent).not.toContain("✓✓");
+    });
+});

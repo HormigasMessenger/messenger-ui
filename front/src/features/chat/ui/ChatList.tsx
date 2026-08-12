@@ -130,15 +130,18 @@ function ChatList({
                                 className={`p-3 flex items-center gap-3 cursor-pointer hover:bg-gray-100
                                 ${selectedChatId === chat.id ? "bg-gray-100" : ""}`}
                             >
-                                {/* Initials avatar + online dot */}
+                                {/* Avatar: group icon (no presence — a group has no single peer) or
+                                    initials + online dot for a 1:1 peer. */}
                                 <span className="relative shrink-0">
                                     <span className="w-10 h-10 rounded-full bg-teal-950 text-white text-sm flex items-center justify-center">
-                                        {initials(chat.name)}
+                                        {chat.kind === "group" ? "👥" : initials(chat.name)}
                                     </span>
-                                    <span
-                                        className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-200 ${chat.online ? "bg-green-500" : "bg-gray-400"}`}
-                                        title={chat.online ? t("chat.online") : t("chat.offline")}
-                                    />
+                                    {chat.kind !== "group" && (
+                                        <span
+                                            className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-gray-200 ${chat.online ? "bg-green-500" : "bg-gray-400"}`}
+                                            title={chat.online ? t("chat.online") : t("chat.offline")}
+                                        />
+                                    )}
                                 </span>
 
                                 <div className="min-w-0 flex-1">
@@ -149,7 +152,7 @@ function ChatList({
                                         </span>
                                     </div>
                                     <div className={`text-sm truncate ${isUnread ? "text-gray-900" : "text-gray-500"}`}>
-                                        {chat.email}
+                                        {chat.kind === "group" ? t("chat.groupChat") : chat.email}
                                     </div>
                                 </div>
                             </div>

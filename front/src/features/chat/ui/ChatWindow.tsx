@@ -6,6 +6,7 @@ import type {Contact} from "@/entities/contact";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {loadOlderHistory} from "@/features/chat/thunk/loadOlderHistory.ts";
 import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
+import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {MESSAGE_WINDOW_INITIAL, MESSAGE_WINDOW_STEP} from "@/shared/config/chat.ts";
 import {sameDay} from "@/shared/lib/datetime.ts";
@@ -17,6 +18,7 @@ import {dateLabel} from "./messageFormat.tsx";
 interface ChatWindowProps {
     chat: Contact | null;
     counterpartId?: string | null;
+    isGroup?: boolean;
     messages: ChatMessageView[];
     historyError?: boolean;
     onReloadHistory?: () => void;
@@ -43,6 +45,7 @@ interface ChatWindowProps {
 function ChatWindow({
                         chat,
                         counterpartId,
+                        isGroup,
                         messages,
                         historyError,
                         onReloadHistory,
@@ -77,6 +80,24 @@ function ChatWindow({
         refetchOnMountOrArgChange: true,
     });
     const lastSeenText = !chat?.online ? fmtLastSeen(peerPresence?.lastSeen ?? null, t) : null;
+
+    // GROUP author labels: resolve the display name of each distinct peer sender in the loaded messages
+    // from the IDS directory (no roster fetch needed — the senderIds ARE the authors). 1:1 skips this.
+    const authorIds = useMemo(
+        () => isGroup
+            ? Array.from(new Set(messages.filter((m) => !m.fromMe && m.from).map((m) => m.from))).sort()
+            : [],
+        [isGroup, messages]
+    );
+    const {data: authorsById = {}} = useGetIdsUsersByIdsQuery(authorIds, {skip: authorIds.length === 0});
+    const authorName = useCallback(
+        (id?: string): string | undefined => {
+            if (!id) return undefined;
+            const d = authorsById[id];
+            return (d ? idsDisplayName(d) : undefined) || id;
+        },
+        [authorsById]
+    );
 
     const selectedChatId = useSelector(
         (state: RootState) => state.chatUi.selectedChatId
@@ -247,6 +268,7 @@ function ChatWindow({
             {/* Header */}
             <ChatHeader
                 chat={chat}
+                isGroup={isGroup}
                 peerTyping={peerTyping}
                 lastSeenText={lastSeenText}
                 blockedByMe={blockedByMe}
@@ -301,6 +323,8 @@ function ChatWindow({
                         bubbleMt={bubbleMt}
                         peerLastReadId={peerLastReadId}
                         status={outboxStatusById?.[msg.id]}
+                        isGroup={isGroup}
+                        authorName={isGroup && !msg.fromMe ? authorName(msg.from) : undefined}
                         onResolveAttachment={onResolveAttachment}
                         onDownloadAttachment={onDownloadAttachment}
                         onDeleteMessage={onDeleteMessage}
