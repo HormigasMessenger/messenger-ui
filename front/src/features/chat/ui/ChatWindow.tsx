@@ -1,19 +1,17 @@
-import {Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState} from "react";
+import {memo, useEffect, useLayoutEffect, useRef, useState} from "react";
 import {useDispatch, useSelector} from "react-redux";
 import {useTranslation} from "react-i18next";
 import type {AppDispatch, RootState} from "@/store/store";
 import type {Contact} from "@/entities/contact";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
-import {loadOlderHistory} from "@/features/chat/thunk/loadOlderHistory.ts";
 import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
-import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
-import {MESSAGE_WINDOW_INITIAL, MESSAGE_WINDOW_STEP} from "@/shared/config/chat.ts";
-import {sameDay} from "@/shared/lib/datetime.ts";
+import {useWindowedHistory} from "@/features/chat/hooks/useWindowedHistory.ts";
+import {useGroupAuthorNames} from "@/features/chat/hooks/useGroupAuthorNames.ts";
 import {ChatHeader} from "./ChatHeader.tsx";
 import {Composer} from "./Composer.tsx";
-import {MessageBubble, type ChatMessageView} from "./MessageBubble.tsx";
-import {dateLabel} from "./messageFormat.tsx";
+import {MessageList} from "./MessageList.tsx";
+import type {ChatMessageView} from "./MessageBubble.tsx";
 
 interface ChatWindowProps {
     chat: Contact | null;
@@ -81,24 +79,6 @@ function ChatWindow({
     });
     const lastSeenText = !chat?.online ? fmtLastSeen(peerPresence?.lastSeen ?? null, t) : null;
 
-    // GROUP author labels: resolve the display name of each distinct peer sender in the loaded messages
-    // from the IDS directory (no roster fetch needed — the senderIds ARE the authors). 1:1 skips this.
-    const authorIds = useMemo(
-        () => isGroup
-            ? Array.from(new Set(messages.filter((m) => !m.fromMe && m.from).map((m) => m.from))).sort()
-            : [],
-        [isGroup, messages]
-    );
-    const {data: authorsById = {}} = useGetIdsUsersByIdsQuery(authorIds, {skip: authorIds.length === 0});
-    const authorName = useCallback(
-        (id?: string): string | undefined => {
-            if (!id) return undefined;
-            const d = authorsById[id];
-            return (d ? idsDisplayName(d) : undefined) || id;
-        },
-        [authorsById]
-    );
-
     const selectedChatId = useSelector(
         (state: RootState) => state.chatUi.selectedChatId
     );
@@ -120,6 +100,11 @@ function ChatWindow({
     // history they're reading; unseenBelow drives the "↓ N new" jump button.
     const atBottomRef = useRef(true);
     const prevLenRef = useRef(messages.length);
+    const prevLastIdRef = useRef<string | null>(null);
+    // Set true when a chat opens; a layout effect lands the view at the newest message as soon as the
+    // opened chat's rows actually render (history loads async, so scrolling on open-alone lands on an
+    // empty/stale list — the "stuck in the middle" bug).
+    const pendingBottomRef = useRef(true);
     const [unseenBelow, setUnseenBelow] = useState(0);
 
     const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
@@ -134,62 +119,11 @@ function ChatWindow({
         if (atBottom && unseenBelow) setUnseenBelow(0);
     };
 
-    // Windowed rendering: keep only the most recent messages in the DOM so a long history doesn't
-    // reconcile hundreds of bubbles. "Show earlier" reveals another step. Reset to the tail when
-    // switching chats.
-    const [visibleCount, setVisibleCount] = useState(MESSAGE_WINDOW_INITIAL);
-    // reachedStart: the server has no older page (loadOlderHistory returned 0). loadingOlder: a
-    // network fetch is in flight. anchorRef: distance-from-bottom captured before revealing/loading
-    // older, so we can restore the viewport after the taller list renders (no scroll jump).
-    const [reachedStart, setReachedStart] = useState(false);
-    const [loadingOlder, setLoadingOlder] = useState(false);
-    const anchorRef = useRef<number | null>(null);
-    const prevLastIdRef = useRef<string | null>(null);
-    // Set true when a chat opens; a layout effect lands the view at the newest message as soon as the
-    // opened chat's rows actually render (history loads async, so scrolling on open-alone lands on an
-    // empty/stale list — the "stuck in the middle" bug).
-    const pendingBottomRef = useRef(true);
-    useEffect(() => {
-        setVisibleCount(MESSAGE_WINDOW_INITIAL);
-        setReachedStart(false);
-    }, [selectedChatId]);
-    const shown = useMemo(
-        () => (messages.length > visibleCount ? messages.slice(messages.length - visibleCount) : messages),
-        [messages, visibleCount]
-    );
-    // More to reveal: either older messages already loaded in memory, or the server may have more.
-    const hasEarlierInMemory = messages.length > visibleCount;
-    const hasEarlier = hasEarlierInMemory || !reachedStart;
-
-    // "Show earlier": first reveal in-memory older messages (windowing); once those run out, pull an
-    // older page from the server (`?before=`) and reveal it too. Capture the scroll anchor first.
-    const showEarlier = useCallback(async () => {
-        if (loadingOlder) return;
-        const el = listRef.current;
-        anchorRef.current = el ? el.scrollHeight - el.scrollTop : null;
-        if (hasEarlierInMemory) {
-            setVisibleCount((c) => c + MESSAGE_WINDOW_STEP);
-            return;
-        }
-        if (reachedStart || !selectedChatId) return;
-        setLoadingOlder(true);
-        try {
-            const n = await dispatch(loadOlderHistory(selectedChatId));
-            if (!n) setReachedStart(true);
-            else setVisibleCount((c) => c + n); // reveal the freshly-prepended older messages
-        } finally {
-            setLoadingOlder(false);
-        }
-    }, [loadingOlder, hasEarlierInMemory, reachedStart, selectedChatId, dispatch]);
-
-    // Restore the viewport after older messages render at the top: keep the same distance from the
-    // bottom so the content the user was reading stays put (no jump).
-    useLayoutEffect(() => {
-        if (anchorRef.current == null) return;
-        const el = listRef.current;
-        if (el) el.scrollTop = el.scrollHeight - anchorRef.current;
-        anchorRef.current = null;
-    }, [shown.length]);
+    // Windowed history + "show earlier" (registers the window-reset + anchor-restore effects; called
+    // BEFORE this component's own scroll effects so their commit order is unchanged). GROUP author-name
+    // resolver (no-op for 1:1).
+    const {shown, hasEarlier, showEarlier, loadingOlder} = useWindowedHistory(messages, selectedChatId, listRef);
+    const authorName = useGroupAuthorNames(messages, !!isGroup);
 
     // Opening a chat: reset trackers, arm the "land at bottom" flag, focus the composer (wide screens
     // only — don't pop the mobile keyboard on every open). LAYOUT effect (before paint) + defined
@@ -265,7 +199,6 @@ function ChatWindow({
                 !isChatOpen ? "hidden" : "flex"
             }`}
         >
-            {/* Header */}
             <ChatHeader
                 chat={chat}
                 isGroup={isGroup}
@@ -278,75 +211,29 @@ function ChatWindow({
                 onDeleteChat={onDeleteChat}
             />
 
-            {/* Messages */}
-            <div ref={listRef} onScroll={onListScroll}
-                 className="flex-1 overflow-y-auto overscroll-contain p-4 bg-gray-300">
-                <div ref={contentRef}>
-                {/* History failed to load (server error) — show it, don't render a silent empty chat. */}
-                {historyError && (
-                    <div className="mx-auto my-2 max-w-xs text-center text-sm bg-red-100 text-red-800 rounded-lg px-3 py-2">
-                        {t("chat.historyLoadError", {defaultValue: "Couldn't load messages"})}
-                        {onReloadHistory && (
-                            <button onClick={() => onReloadHistory()} className="ml-2 underline font-medium">
-                                {t("chat.retry")}
-                            </button>
-                        )}
-                    </div>
-                )}
-                {hasEarlier && (
-                    <button
-                        onClick={showEarlier}
-                        disabled={loadingOlder}
-                        className="mx-auto block text-sm text-teal-800 hover:underline py-1 disabled:opacity-50"
-                    >
-                        {loadingOlder ? t("loading") : t("chat.loadEarlier")}
-                    </button>
-                )}
-                {shown.map((msg, idx) => {
-                    const prev = idx > 0 ? shown[idx - 1] : null;
-                    const showDate = !prev || !sameDay(prev.createdAt, msg.createdAt);
-                    // Tighten spacing for a run of consecutive same-sender messages (within 5 min).
-                    const grouped = !!prev && !showDate && prev.fromMe === msg.fromMe
-                        && (msg.createdAt - prev.createdAt) < 5 * 60 * 1000;
-                    const bubbleMt = showDate ? "mt-0" : grouped ? "mt-0.5" : "mt-3";
-                    return (
-                    <Fragment key={msg.id}>
-                    {showDate && (
-                        <div className="text-center my-2">
-                            <span className="inline-block text-[11px] text-gray-600 bg-white/70 rounded-full px-3 py-0.5">
-                                {dateLabel(msg.createdAt, t)}
-                            </span>
-                        </div>
-                    )}
-                    <MessageBubble
-                        msg={msg}
-                        bubbleMt={bubbleMt}
-                        peerLastReadId={peerLastReadId}
-                        status={outboxStatusById?.[msg.id]}
-                        isGroup={isGroup}
-                        authorName={isGroup && !msg.fromMe ? authorName(msg.from) : undefined}
-                        onResolveAttachment={onResolveAttachment}
-                        onDownloadAttachment={onDownloadAttachment}
-                        onDeleteMessage={onDeleteMessage}
-                        onRetryMessage={onRetryMessage}
-                        onDiscardMessage={onDiscardMessage}
-                    />
-                    </Fragment>
-                    );
-                })}
-                <div ref={bottomRef}/>
-                </div>
-            </div>
-
-            {/* Jump-to-bottom when scrolled up and new messages arrived below */}
-            {unseenBelow > 0 && (
-                <button
-                    onClick={() => scrollToBottom()}
-                    className="absolute right-4 bottom-24 z-20 bg-teal-950 text-white text-xs rounded-full px-3 py-1.5 shadow-lg hover:bg-teal-900"
-                >
-                    ↓ {unseenBelow}
-                </button>
-            )}
+            <MessageList
+                listRef={listRef}
+                contentRef={contentRef}
+                bottomRef={bottomRef}
+                onScroll={onListScroll}
+                shown={shown}
+                peerLastReadId={peerLastReadId}
+                outboxStatusById={outboxStatusById}
+                isGroup={isGroup}
+                authorName={authorName}
+                historyError={historyError}
+                onReloadHistory={onReloadHistory}
+                hasEarlier={hasEarlier}
+                showEarlier={showEarlier}
+                loadingOlder={loadingOlder}
+                unseenBelow={unseenBelow}
+                onJumpToBottom={() => scrollToBottom()}
+                onResolveAttachment={onResolveAttachment}
+                onDownloadAttachment={onDownloadAttachment}
+                onDeleteMessage={onDeleteMessage}
+                onRetryMessage={onRetryMessage}
+                onDiscardMessage={onDiscardMessage}
+            />
 
             <Composer
                 inputRef={inputRef}
