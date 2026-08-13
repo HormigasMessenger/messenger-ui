@@ -2,6 +2,7 @@ import type {Middleware, PayloadAction} from "@reduxjs/toolkit";
 import type {WSMessage} from "@/infrastructure/types.ts";
 import type {AppDispatch, RootState} from "@/store/store.ts";
 import {chatApi} from "@/features/chat/rest/chatApi.ts";
+import {groupApi} from "@/features/groups/rest/groupApi.ts";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
 import {wireToChatMessage} from "@/features/chat/model/mapper.ts";
 import {buildChatAck, buildReadIn, type WireMessage} from "@/features/chat/model/schema/wireMessage.schema.ts";
@@ -67,10 +68,18 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             // invalidateTags: a plain refetch would drop a freshly-created, still-hidden chat the user
             // has selected (GET /chats omits message-less convs), and the dangling-close would then
             // shut their open compose window.
-            const summaries = chatApi.endpoints.getChats.select({myId})(st)?.data;
-            if (!summaries?.some((s) => s.conversationId === chatId)) {
-                logger.debug("CHAT_OUT for unknown conversation, refreshing chat list", chatId);
+            // The list spans two resources: DIRECT chats (getChats) and GROUPS (getGroups). Only treat
+            // the conversation as "unknown" if it's in NEITHER — otherwise every incoming GROUP message
+            // (never in getChats) would needlessly refetch /api/chats. If it's truly unknown, refresh the
+            // direct list (preserve-selected) AND the groups list (covers being freshly added to a group).
+            const inDirects = chatApi.endpoints.getChats.select({myId})(st)?.data
+                ?.some((s) => s.conversationId === chatId);
+            const inGroups = groupApi.endpoints.getGroups.select(undefined)(st)?.data
+                ?.some((g) => g.id === chatId);
+            if (!inDirects && !inGroups) {
+                logger.debug("CHAT_OUT for unknown conversation, refreshing chat lists", chatId);
                 chatMessagesService.refetchChatsPreservingSelected(dispatch, store.getState as () => RootState);
+                dispatch(groupApi.endpoints.getGroups.initiate(undefined, {forceRefetch: true}));
             }
 
             // ACK delivery (SENT → DELIVERED; advances the server GC watermark).

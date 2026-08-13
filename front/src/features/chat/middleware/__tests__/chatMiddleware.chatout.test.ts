@@ -3,6 +3,7 @@ import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 // --- Mutable test doubles (hoisted so vi.mock factories can close over them) ---
 const h = vi.hoisted(() => ({
     getChatsData: [] as Array<{conversationId: string}>,
+    getGroupsData: [] as Array<{id: string}>,
 }));
 
 vi.mock("@/features/chat/rest/chatApi.ts", () => ({
@@ -15,6 +16,17 @@ vi.mock("@/features/chat/rest/chatApi.ts", () => ({
         },
         endpoints: {
             getChats: {select: vi.fn(() => () => ({data: h.getChatsData}))},
+        },
+    },
+}));
+
+vi.mock("@/features/groups/rest/groupApi.ts", () => ({
+    groupApi: {
+        endpoints: {
+            getGroups: {
+                select: vi.fn(() => () => ({data: h.getGroupsData})),
+                initiate: vi.fn(() => ({type: "test/getGroups/initiate"})),
+            },
         },
     },
 }));
@@ -80,6 +92,7 @@ const chatOut = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
     h.getChatsData = [{conversationId: "c1"}];
+    h.getGroupsData = [];
     vi.mocked(chatMessagesService.refetchChatsPreservingSelected).mockClear();
     vi.mocked(playNotificationSound).mockClear();
     vi.mocked(showDesktopNotification).mockClear();
@@ -127,6 +140,14 @@ describe("chatMiddleware — CHAT_OUT (live delivery)", () => {
     });
 
     it("does NOT refresh the list when the conversation is already known", () => {
+        const {run} = harness("c1");
+        run(chatOut());
+        expect(chatMessagesService.refetchChatsPreservingSelected).not.toHaveBeenCalled();
+    });
+
+    it("does NOT refetch the direct list for a GROUP message (the conversation is in getGroups)", () => {
+        h.getChatsData = [{conversationId: "other"}];   // c1 is NOT a direct chat...
+        h.getGroupsData = [{id: "c1"}];                 // ...but IS a known group
         const {run} = harness("c1");
         run(chatOut());
         expect(chatMessagesService.refetchChatsPreservingSelected).not.toHaveBeenCalled();
