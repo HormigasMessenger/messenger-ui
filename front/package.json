@@ -13,6 +13,7 @@
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build"
   },
   "dependencies": {
+    "@jsquash/webp": "^1.5.0",
     "@ory/client": "^1.22.15",
     "@reduxjs/toolkit": "^2.11.2",
     "@tailwindcss/vite": "^4.1.18",

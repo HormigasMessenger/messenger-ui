@@ -3,7 +3,8 @@ import toast from "react-hot-toast";
 import {useTranslation} from "react-i18next";
 
 import {logger} from "@/shared/logger/logger.ts";
-import {MAX_ATTACHMENT_BYTES} from "@/shared/config/chat.ts";
+import {MAX_ATTACHMENT_BYTES, IMAGE_MAX_DIMENSION, IMAGE_QUALITY, IMAGE_COMPRESS_MIN_BYTES} from "@/shared/config/chat.ts";
+import {compressImage} from "@/features/chat/lib/imageCompress.ts";
 import {
     useAttachmentUploadUrlMutation,
     useAttachmentConfirmMutation,
@@ -26,15 +27,21 @@ export function useChatAttachments(
     const [confirmMut] = useAttachmentConfirmMutation();
     const [downloadUrlMut] = useAttachmentDownloadUrlMutation();
 
-    const sendAttachment = useCallback(async (file: File) => {
-        if (!selectedChatId || !file) return;
-        if (file.size > MAX_ATTACHMENT_BYTES) {
+    const sendAttachment = useCallback(async (original: File) => {
+        if (!selectedChatId || !original) return;
+        if (original.size > MAX_ATTACHMENT_BYTES) {
             toast.error(t("chat.fileTooLarge", {mb: Math.floor(MAX_ATTACHMENT_BYTES / (1024 * 1024))}));
             return;
         }
-        const contentType = file.type || "application/octet-stream";
         setUploadProgress(0);
         try {
+            // Downscale + re-encode images to WebP client-side before upload (no-op for non-images /
+            // small ones / when it wouldn't help). Never blocks the send — failures fall back to the
+            // original inside compressImage.
+            const file = await compressImage(original, {
+                maxDimension: IMAGE_MAX_DIMENSION, quality: IMAGE_QUALITY, minBytes: IMAGE_COMPRESS_MIN_BYTES,
+            });
+            const contentType = file.type || "application/octet-stream";
             const up = await uploadUrlMut({
                 chatId: selectedChatId, fileName: file.name, contentType, sizeBytes: file.size,
             }).unwrap();
