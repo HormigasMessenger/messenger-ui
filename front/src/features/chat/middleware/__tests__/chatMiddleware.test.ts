@@ -67,6 +67,19 @@ describe("chatMiddleware — group roster & typing", () => {
         );
     });
 
+    it("member_joined where I am the subject refetches my groups list (I was just added)", () => {
+        // getState().user.id === "me". A getGroups refetch is dispatched as a thunk (a function).
+        const frame = {type: "SERVICE_OUT", conversationId: "g1", payload: {kind: "member_joined", body: "me"}};
+        chatMiddleware(store)(next)({type: "ws/incoming", payload: frame});
+        expect(store.dispatch).toHaveBeenCalledWith(expect.any(Function));
+    });
+
+    it("member_joined for SOMEONE ELSE does not refetch my groups list", () => {
+        const frame = {type: "SERVICE_OUT", conversationId: "g1", payload: {kind: "member_joined", body: "u3"}};
+        chatMiddleware(store)(next)({type: "ws/incoming", payload: frame});
+        expect(store.dispatch).not.toHaveBeenCalledWith(expect.any(Function));
+    });
+
     it("TYPING_OUT carries the author id into setTyping (group '<name> is typing')", () => {
         const frame = {type: "TYPING_OUT", conversationId: "g1", senderId: "u2"};
         chatMiddleware(store)(next)({type: "ws/incoming", payload: frame});

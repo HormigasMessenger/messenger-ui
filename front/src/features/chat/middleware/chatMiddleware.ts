@@ -155,13 +155,19 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
 
         case "SERVICE_OUT": {
             // Best-effort roster-change hint (ADR-024): payload.kind = member_joined | member_left for
-            // a group. Invalidate that group's roster so the RosterPanel / header re-fetch the
-            // authoritative membership (GET /api/groups/{id}/members). Non-durable — missed while
+            // a group, payload.body = the subject user id. Invalidate that group's roster so the
+            // RosterPanel / header re-fetch the authoritative membership. Non-durable — missed while
             // offline; the self-heal in ChatWindow (unknown sender → refetch) covers the gaps.
             const chatId = frame.conversationId;
-            const kind = (frame.payload as {kind?: string} | undefined)?.kind;
+            const p = frame.payload as {kind?: string; body?: string} | undefined;
+            const kind = p?.kind;
             if (chatId && (kind === "member_joined" || kind === "member_left")) {
                 dispatch(chatApi.util.invalidateTags([{type: "Chat", id: `group-members:${chatId}`}]));
+                // If *I* am the subject, my groups LIST changed — refetch it so a group I was just added
+                // to appears in my chat list (or a group I was removed from drops) without a refresh.
+                if (p?.body === myId) {
+                    dispatch(groupApi.endpoints.getGroups.initiate(undefined, {forceRefetch: true}));
+                }
             }
             break;
         }

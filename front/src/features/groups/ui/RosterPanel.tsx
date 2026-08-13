@@ -94,11 +94,13 @@ export function RosterPanel({
                     ))}
 
                     {/* Add member */}
+                    {/* text-base (16px): a smaller font makes mobile browsers auto-zoom on focus, which
+                        blew the roster dialog off-screen ("приходится уменьшать вручную"). */}
                     <input
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder={t("group.addMember")}
-                        className="mt-3 w-full rounded-full px-4 py-2 bg-gray-100 border focus:outline-none text-sm"
+                        className="mt-3 w-full rounded-full px-4 py-2 bg-gray-100 border focus:outline-none text-base"
                     />
                     {visible.map((u) => (
                         <button key={u.id} onClick={() => add(u)} disabled={adding}
