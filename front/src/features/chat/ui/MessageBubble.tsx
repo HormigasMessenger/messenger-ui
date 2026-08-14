@@ -1,5 +1,5 @@
 import {useTranslation} from "react-i18next";
-import {isUlid} from "@/shared/ulid/ulid.ts";
+import {isUlid, ulidTimeMs} from "@/shared/ulid/ulid.ts";
 import {formatLocalTime} from "@/shared/lib/datetime.ts";
 import {AttachmentImage} from "./AttachmentImage.tsx";
 import {linkify} from "./messageFormat.tsx";
@@ -112,8 +112,17 @@ export function MessageBubble({
                 // id — comparing that against a ULID boundary is meaningless (nanoid's first char lands on
                 // either side of a ULID's at random), which produced intermittent false ✓✓. Guard with
                 // isUlid: no server id == not yet stored == cannot be read.
-                // Groups have no peer read watermark (read-by-N is a later backend phase) → always ✓, never ✓✓.
-                const isRead = !isGroup && !!peerLastReadId && isUlid(msg.id) && msg.id <= peerLastReadId;
+                // Read iff the peer's read boundary (a server ULID, ULID-guarded in the reducer) is
+                // at/after this message. Prefer an EXACT id compare once the message has its server
+                // ULID (reconciled by CHAT_ACK); before that — a just-sent optimistic echo still on its
+                // temp client id — fall back to comparing the boundary ULID's embedded TIME against this
+                // message's createdAt, so ✓✓ appears LIVE without waiting for a history reload to swap
+                // the id. Groups have no peer read watermark (read-by-N is a later backend phase) → ✓ only.
+                const isRead = !isGroup && isUlid(peerLastReadId) && (
+                    isUlid(msg.id)
+                        ? msg.id <= peerLastReadId
+                        : msg.createdAt <= ulidTimeMs(peerLastReadId)
+                );
                 return (
                     <span className="ml-2 text-[10px] align-bottom opacity-70"
                           title={isRead ? t("chat.read") : t("chat.sent")}>

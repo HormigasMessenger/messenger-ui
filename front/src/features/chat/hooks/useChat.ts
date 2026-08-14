@@ -2,6 +2,7 @@ import {useCallback, useMemo, useState, useEffect} from "react";
 import {useDispatch, useSelector} from "react-redux";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice";
 import {rememberSticky, forgetSticky} from "@/features/chat/model/slices/stickyChatsSlice";
+import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import type {AppDispatch, RootState} from "@/store/store";
 
 import {useChatMessages} from "./useChatMessages";
@@ -121,11 +122,20 @@ export function useChat() {
     }, [dispatch, markRead, sendReadReceipt]);
 
     const deleteChat = useCallback(async () => {
-        // Explicit delete: also forget it as sticky so it doesn't reappear as an "empty" chat.
-        if (selectedChatId) dispatch(forgetSticky(selectedChatId));
+        const id = selectedChatId;
+        if (id) {
+            // Explicit delete: forget it as sticky AND optimistically drop it from the list cache, so
+            // the "remember opened chat" effect can't re-add it as a sticky (empty) chat before the
+            // backend refetch lands — otherwise a deleted chat reappears empty.
+            dispatch(forgetSticky(id));
+            dispatch(chatApi.util.updateQueryData("getChats", {myId}, (draft) => {
+                const i = draft.findIndex((s) => s.conversationId === id);
+                if (i >= 0) draft.splice(i, 1);
+            }));
+        }
         await clearChat();
         dispatch(setSelectedChatId(null));
-    }, [clearChat, dispatch, selectedChatId]);
+    }, [clearChat, dispatch, selectedChatId, myId]);
 
     // Outbox delivery status (per-message 🕐 / ⚠ + retry/discard) lives in its own hook.
     const {outboxStatusById, retryMessage, discardMessage} = useOutboxStatus({selectedChatId, myId});

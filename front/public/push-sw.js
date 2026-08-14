@@ -139,11 +139,28 @@ async function showChatNotification(payload) {
     await self.registration.showNotification(title, options);
 }
 
+// True if any app window is in the FOREGROUND (visible/focused) right now.
+async function appInForeground() {
+    try {
+        const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+        return wins.some((c) => c.focused === true || c.visibilityState === "visible");
+    } catch (e) {
+        return false;
+    }
+}
+
 // OFFLINE channel: server Web Push.
 self.addEventListener("push", (event) => {
     let payload = {};
     try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
-    event.waitUntil(showChatNotification(payload));
+    event.waitUntil((async () => {
+        // Suppress the system notification while the app is in the FOREGROUND — the user is looking at
+        // it and the message already shows in-app; a Web Push banner would be redundant/annoying (this
+        // happens when a push is delivered/redelivered just as the user returns to the app). We do NOT
+        // claim dedup here, so a later background redelivery still notifies if it was never seen.
+        if (await appInForeground()) return;
+        await showChatNotification(payload);
+    })());
 });
 
 // ONLINE channel: the live app asks the arbiter to render a notification (see notify.ts).

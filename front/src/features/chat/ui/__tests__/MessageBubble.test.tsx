@@ -39,10 +39,17 @@ describe("MessageBubble delivery/read indicator", () => {
         expect(c.textContent).not.toContain("✓✓");
     });
 
-    it("does NOT show ✓✓ for a not-yet-reconciled temp (non-ULID) id, even with a boundary set", () => {
-        const c = renderBubble({msg: msg({id: "temp-nanoid"}), peerLastReadId: ULID_B});
+    it("shows ✓✓ LIVE for a not-yet-reconciled temp id when its time is at/before the boundary", () => {
+        // A just-sent optimistic echo still on its temp client id, whose createdAt is older than the
+        // peer's read-boundary ULID time → read (the timestamp fallback, no reload needed).
+        const c = renderBubble({msg: msg({id: "temp-nanoid", createdAt: 1_700_000_000_000}), peerLastReadId: ULID_B});
+        expect(c.textContent).toContain("✓✓");
+    });
+
+    it("shows single ✓ for a temp id whose time is AFTER the boundary (not read yet)", () => {
+        const c = renderBubble({msg: msg({id: "temp-nanoid", createdAt: 1_900_000_000_000}), peerLastReadId: ULID_B});
         expect(c.textContent).toContain("✓");
-        expect(c.textContent).not.toContain("✓✓"); // isUlid guard prevents a false ✓✓
+        expect(c.textContent).not.toContain("✓✓");
     });
 
     it("renders no tick for a peer's message (not fromMe)", () => {
