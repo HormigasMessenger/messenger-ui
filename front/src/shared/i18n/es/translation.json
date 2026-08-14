@@ -82,6 +82,11 @@
     "fileTooLarge": "Archivo demasiado grande (máx {{mb}} MB)",
     "uploading": "Subiendo… {{p}}%",
     "downloadError": "No se pudo descargar",
+    "recordVoice": "Grabar mensaje de voz",
+    "cancelRecording": "Cancelar grabación",
+    "sendVoice": "Enviar audio",
+    "micError": "No se pudo acceder al micrófono",
+    "voiceMessage": "Mensaje de voz",
     "msgSendError": "No se pudo enviar — reabre el chat",
     "historyLoadError": "No se pudieron cargar los mensajes"
   },

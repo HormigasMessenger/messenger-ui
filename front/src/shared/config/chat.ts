@@ -30,3 +30,6 @@ export const THUMB_QUALITY = 0.6;
 // ~320px WebP (~5–25 KB), so 500 bounds the cache to roughly 3–12 MB. The browser can also evict the
 // whole origin under storage pressure; either way a miss just re-resolves + re-generates (no data loss).
 export const THUMB_CACHE_MAX = 500;
+
+// Voice messages: max recording length before auto-send (guards a runaway recording / huge upload).
+export const VOICE_MAX_DURATION_MS = 3 * 60 * 1000; // 3 minutes

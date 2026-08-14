@@ -1,5 +1,12 @@
-import {useRef, type RefObject} from "react";
+import {useCallback, useEffect, useRef, type RefObject} from "react";
 import {useTranslation} from "react-i18next";
+import {useVoiceRecorder} from "@/features/chat/hooks/useVoiceRecorder.ts";
+import {VOICE_MAX_DURATION_MS} from "@/shared/config/chat.ts";
+
+function formatMs(ms: number): string {
+    const s = Math.floor(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
 
 /**
  * Message composer: attachment-upload progress, the blocked banner (replaces the input when the pair
@@ -31,6 +38,19 @@ export function Composer({
 }) {
     const {t} = useTranslation();
     const fileRef = useRef<HTMLInputElement>(null);
+    const {recording, elapsedMs, start, stop, cancel} = useVoiceRecorder();
+
+    // Stop recording and hand the audio to the normal attachment-upload path.
+    const sendVoice = useCallback(async () => {
+        const file = await stop();
+        if (file) onSendAttachment?.(file);
+    }, [stop, onSendAttachment]);
+
+    // Auto-send once the recording hits the max length (stop() flips `recording` false immediately, so
+    // this fires at most once).
+    useEffect(() => {
+        if (recording && elapsedMs >= VOICE_MAX_DURATION_MS) void sendVoice();
+    }, [recording, elapsedMs, sendVoice]);
 
     return (
         <>
@@ -48,6 +68,31 @@ export function Composer({
             {blocked ? (
                 <div className="shrink-0 p-3 bg-gray-100 border-t text-center text-sm text-gray-600">
                     {blockedByPeer ? t("chat.blockedByPeer") : t("chat.blockedByYou")}
+                </div>
+            ) : recording ? (
+                // Recording strip: cancel · live timer · send. Replaces the input row while recording.
+                <div className="shrink-0 p-4 bg-white border-t flex items-center gap-3">
+                    <button
+                        onClick={cancel}
+                        title={t("chat.cancelRecording")}
+                        aria-label={t("chat.cancelRecording")}
+                        className="text-xl px-1 text-red-600 hover:opacity-80"
+                    >
+                        🗑
+                    </button>
+                    <div className="flex-1 flex items-center gap-2 text-sm text-gray-700">
+                        <span className="w-2.5 h-2.5 rounded-full bg-red-600 animate-pulse"/>
+                        <span className="tabular-nums">{formatMs(elapsedMs)}</span>
+                        <span className="text-gray-400 tabular-nums">/ {formatMs(VOICE_MAX_DURATION_MS)}</span>
+                    </div>
+                    <button
+                        onClick={() => void sendVoice()}
+                        title={t("chat.sendVoice")}
+                        aria-label={t("chat.sendVoice")}
+                        className="bg-teal-950 text-white px-5 py-3.5 rounded-full"
+                    >
+                        ↑
+                    </button>
                 </div>
             ) : (
                 <div className="shrink-0 p-4 bg-white border-t flex items-center gap-2">
@@ -68,6 +113,14 @@ export function Composer({
                         className="text-2xl px-1 hover:opacity-80"
                     >
                         📎
+                    </button>
+                    <button
+                        onClick={() => void start()}
+                        title={t("chat.recordVoice")}
+                        aria-label={t("chat.recordVoice")}
+                        className="text-2xl px-1 hover:opacity-80"
+                    >
+                        🎤
                     </button>
                     <textarea
                         ref={inputRef}

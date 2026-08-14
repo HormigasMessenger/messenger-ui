@@ -2,6 +2,7 @@ import {useTranslation} from "react-i18next";
 import {isUlid, ulidTimeMs} from "@/shared/ulid/ulid.ts";
 import {formatLocalTime} from "@/shared/lib/datetime.ts";
 import {AttachmentImage} from "./AttachmentImage.tsx";
+import {AttachmentAudio} from "./AttachmentAudio.tsx";
 import {linkify} from "./messageFormat.tsx";
 
 export interface ChatMessageView {
@@ -63,6 +64,12 @@ export function MessageBubble({
                     <AttachmentImage
                         attachmentId={msg.meta?.attachmentId ?? ""}
                         fileName={msg.meta?.fileName ?? msg.text ?? "imagen"}
+                        resolveUrl={onResolveAttachment}
+                    />
+                ) : (msg.meta?.contentType ?? "").startsWith("audio/") ? (
+                    <AttachmentAudio
+                        attachmentId={msg.meta?.attachmentId ?? ""}
+                        fileName={msg.meta?.fileName ?? msg.text ?? "audio"}
                         resolveUrl={onResolveAttachment}
                     />
                 ) : (

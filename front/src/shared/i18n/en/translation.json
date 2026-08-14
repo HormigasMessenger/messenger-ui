@@ -82,6 +82,11 @@
     "fileTooLarge": "File too large (max {{mb}} MB)",
     "uploading": "Uploading… {{p}}%",
     "downloadError": "Could not download",
+    "recordVoice": "Record voice message",
+    "cancelRecording": "Cancel recording",
+    "sendVoice": "Send voice",
+    "micError": "Could not access the microphone",
+    "voiceMessage": "Voice message",
     "msgSendError": "Couldn't send — reopen the chat",
     "historyLoadError": "Couldn't load messages"
   },
