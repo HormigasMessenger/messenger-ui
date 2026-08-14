@@ -21,6 +21,20 @@ const SCOPE_PATH = (() => {
     try { return new URL(self.registration.scope).pathname; } catch (e) { return "/"; }
 })();
 
+// hormiga-webpush API on the edge. Same origin, mounted at /webpush (the deploy default,
+// VITE_WEBPUSH_BASE — the SW is served verbatim so it can't read the app's build config).
+const WEBPUSH_BASE = "/webpush";
+
+// base64url VAPID key → Uint8Array (PushManager.applicationServerKey). Mirrors push.ts.
+function vapidKeyToBytes(base64) {
+    const padding = "=".repeat((4 - (base64.length % 4)) % 4);
+    const b64 = (base64 + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = atob(b64);
+    const out = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+}
+
 // Cross-channel dedup in TWO layers, keyed by messageId:
 //  L1 — in-memory Map (this SW lifetime): wins the near-simultaneous online/offline race SYNCHRONOUSLY.
 //  L2 — IndexedDB (durable across SW restarts): suppresses the backend's guaranteed REDELIVERY. The
@@ -138,6 +152,42 @@ self.addEventListener("message", (event) => {
     if (msg && msg.type === "show-notification" && msg.payload) {
         event.waitUntil(showChatNotification(msg.payload));
     }
+});
+
+// AUTOMATIC background token refresh. The browser / push service can ROTATE or EXPIRE the push
+// subscription on its own — and it fires this event in the SW even when the app is closed. Without
+// handling it, the rotated endpoint 410s server-side and the user SILENTLY stops receiving pushes
+// until they next open the app (which re-subscribes). Here we re-subscribe with the current VAPID key
+// and re-register the NEW endpoint with the backend immediately (the Kratos cookie rides on the
+// same-origin fetch, so the backend re-associates it with this user). Best-effort.
+self.addEventListener("pushsubscriptionchange", (event) => {
+    event.waitUntil((async () => {
+        try {
+            const keyRes = await fetch(WEBPUSH_BASE + "/vapid-public-key", {credentials: "include"});
+            if (!keyRes.ok) return;
+            const publicKey = (await keyRes.json()).publicKey;
+            if (!publicKey) return;
+            // Prefer the browser-provided new subscription; otherwise re-subscribe.
+            let sub = event.newSubscription || null;
+            if (!sub) {
+                sub = await self.registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: vapidKeyToBytes(publicKey),
+                });
+            }
+            const j = sub.toJSON();
+            await fetch(WEBPUSH_BASE + "/subscriptions", {
+                method: "POST",
+                credentials: "include",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({
+                    endpoint: j.endpoint,
+                    keys: {p256dh: j.keys && j.keys.p256dh, auth: j.keys && j.keys.auth},
+                    userAgent: (self.navigator && self.navigator.userAgent) || "",
+                }),
+            });
+        } catch (e) { /* best-effort: the app also re-registers on next open */ }
+    })());
 });
 
 self.addEventListener("notificationclick", (event) => {
