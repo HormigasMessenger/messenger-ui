@@ -1,5 +1,5 @@
 import {type IDBPDatabase, openDB} from 'idb';
-import {DB_NAME, DB_VERSION, HISTORY_STORE_NAME, STORE_KEY, STORE_NAME} from "@/shared/config/idb";
+import {DB_NAME, DB_VERSION, HISTORY_STORE_NAME, STORE_KEY, STORE_NAME, THUMB_STORE_NAME} from "@/shared/config/idb";
 import type {OutboxState} from "@/features/chat/model/types";
 import type {ChatMessage} from "@/features/chat/model/schema/domainChatMessage.schema";
 
@@ -18,6 +18,10 @@ export const initDB = async () => {
                 // v2: per-conversation history cache, keyed by chatId.
                 if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
                     db.createObjectStore(HISTORY_STORE_NAME);
+                }
+                // v3: attachment thumbnail cache, keyed by attachmentId (value = small WebP Blob).
+                if (!db.objectStoreNames.contains(THUMB_STORE_NAME)) {
+                    db.createObjectStore(THUMB_STORE_NAME);
                 }
             },
         });
@@ -50,9 +54,24 @@ export async function loadHistoryFromDB(chatId: string): Promise<ChatMessage[] |
     return (result as ChatMessage[]) ?? null;
 }
 
-// Wipe all locally-cached user data (outbox queue + per-conversation history). Called on logout so
-// one user's queued messages and plaintext history never linger on the device for the next user.
+// --- attachment thumbnail cache -----------------------------------------------------
+export async function saveThumbToDB(attachmentId: string, blob: Blob) {
+    if (!attachmentId || !blob) return;
+    const db = await initDB();
+    await db.put(THUMB_STORE_NAME, blob, attachmentId);
+}
+
+export async function loadThumbFromDB(attachmentId: string): Promise<Blob | null> {
+    if (!attachmentId) return null;
+    const db = await initDB();
+    const result = await db.get(THUMB_STORE_NAME, attachmentId);
+    return (result as Blob) ?? null;
+}
+
+// Wipe all locally-cached user data (outbox queue + per-conversation history + attachment thumbnails).
+// Called on logout so one user's queued messages, plaintext history and images never linger on the
+// device for the next user.
 export async function clearAllLocalData() {
     const db = await initDB();
-    await Promise.all([db.clear(STORE_NAME), db.clear(HISTORY_STORE_NAME)]);
+    await Promise.all([db.clear(STORE_NAME), db.clear(HISTORY_STORE_NAME), db.clear(THUMB_STORE_NAME)]);
 }

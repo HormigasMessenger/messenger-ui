@@ -20,3 +20,9 @@ export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024; // 25 MB
 export const IMAGE_MAX_DIMENSION = 1200;            // px — longest side after downscale (never upscales)
 export const IMAGE_QUALITY = 0.8;                   // 0..1 → WebP quality
 export const IMAGE_COMPRESS_MIN_BYTES = 150 * 1024; // don't bother compressing images below this
+
+// Inline thumbnail cache (IndexedDB): the small WebP generated from a shown image so re-mounts/scrolls
+// render instantly without re-resolving/re-downloading. The chat renders images at ~200px, so 320px
+// covers 1x/2x crisply while staying tiny.
+export const THUMB_MAX_DIMENSION = 320;
+export const THUMB_QUALITY = 0.6;
