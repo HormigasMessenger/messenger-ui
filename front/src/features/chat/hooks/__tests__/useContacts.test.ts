@@ -9,7 +9,7 @@ import { useGetGroupsQuery } from "@/features/groups";
 // useContacts now derives the chat list from GET /chats (ChatSummary[]) and resolves counterpart
 // names via the IDS directory by id (useGetIdsUsersByIdsQuery), with presence as a fallback.
 // useSelector is stubbed against a fake state so the hook's myId / presence selectors resolve.
-const fakeState = { user: { id: "user1" }, presence: { byId: {} }, stickyChats: { byId: {} }, chatUi: { activityByChat: {} as Record<string, number> } };
+const fakeState = { user: { id: "user1" }, presence: { byId: {} }, stickyChats: { byId: {} }, chatUi: { unreadByChat: {} as Record<string, boolean> } };
 
 vi.mock("react-i18next", () => ({useTranslation: () => ({t: (k: string) => k})}));
 vi.mock("react-redux", () => ({
@@ -33,7 +33,7 @@ describe("useContacts", () => {
         // Default: no groups (tests that care set their own return).
         (useGetGroupsQuery as unknown as Mock).mockReturnValue({ data: [], isLoading: false });
         fakeState.stickyChats.byId = {};
-        fakeState.chatUi.activityByChat = {};
+        fakeState.chatUi.unreadByChat = {};
     });
 
     it("returns empty contacts while the chat list is loading", () => {
@@ -94,9 +94,10 @@ describe("useContacts", () => {
 
         const {result} = renderHook(() => useContacts());
 
+        // Sorted by name: "Squad" < "user2" (case-insensitive), so the group comes first.
         expect(result.current.contacts).toEqual([
-            {id: "c1", kind: "direct", name: "user2", last: "", email: "user2", online: false},
             {id: "g1", kind: "group", name: "Squad", last: "", email: "", online: false},
+            {id: "c1", kind: "direct", name: "user2", last: "", email: "user2", online: false},
         ]);
         // getSummary resolves the group too (so opening it works: kind group, no counterpart).
         expect(result.current.getSummary("g1")).toMatchObject({kind: "group", counterpartId: ""});
@@ -120,31 +121,43 @@ describe("useContacts", () => {
         expect(withBackend.result.current.contacts.filter((c) => c.id === "s1")).toHaveLength(1);
     });
 
-    it("sorts the list by last activity (updatedAt), newest first", () => {
+    it("sorts the list alphabetically by name (case-insensitive), regardless of backend order", () => {
         (useGetChatsQuery as unknown as Mock).mockReturnValue({
             data: [
-                { conversationId: "old", kind: "direct", counterpartId: "u1", blocked: false, updatedAt: 1000 },
-                { conversationId: "new", kind: "direct", counterpartId: "u2", blocked: false, updatedAt: 5000 },
+                { conversationId: "c1", kind: "direct", counterpartId: "u1", blocked: false },
+                { conversationId: "c2", kind: "direct", counterpartId: "u2", blocked: false },
+                { conversationId: "c3", kind: "direct", counterpartId: "u3", blocked: false },
             ],
             isLoading: false, isError: false,
         });
-        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({ data: {} });
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({
+            data: {
+                u1: { id: "u1", first_name: "charlie" },
+                u2: { id: "u2", first_name: "Alice" },
+                u3: { id: "u3", first_name: "bob" },
+            },
+        });
         const { result } = renderHook(() => useContacts());
-        expect(result.current.contacts.map((c) => c.id)).toEqual(["new", "old"]);
+        expect(result.current.contacts.map((c) => c.name)).toEqual(["Alice", "bob", "charlie"]);
     });
 
-    it("live activity floats a chat above one with a more-recent backend updatedAt", () => {
+    it("floats chats with unread to the top (each half still alphabetical by name)", () => {
         (useGetChatsQuery as unknown as Mock).mockReturnValue({
             data: [
-                { conversationId: "a", kind: "direct", counterpartId: "u1", blocked: false, updatedAt: 1000 },
-                { conversationId: "b", kind: "direct", counterpartId: "u2", blocked: false, updatedAt: 5000 },
+                { conversationId: "a", kind: "direct", counterpartId: "u1", blocked: false },
+                { conversationId: "z", kind: "direct", counterpartId: "u2", blocked: false },
             ],
             isLoading: false, isError: false,
         });
-        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({ data: {} });
-        fakeState.chatUi.activityByChat = { a: 9000 }; // "a" just got a message → floats above "b"
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({
+            data: {
+                u1: { id: "u1", first_name: "Aaron" }, // alphabetically first…
+                u2: { id: "u2", first_name: "Zoe" },   // …but Zoe has unread → floats above Aaron
+            },
+        });
+        fakeState.chatUi.unreadByChat = { z: true };
         const { result } = renderHook(() => useContacts());
-        expect(result.current.contacts.map((c) => c.id)).toEqual(["a", "b"]);
+        expect(result.current.contacts.map((c) => c.id)).toEqual(["z", "a"]);
     });
 
     it("surfaces the chat-list error flag", () => {

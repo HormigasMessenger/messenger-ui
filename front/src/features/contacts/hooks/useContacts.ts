@@ -25,16 +25,13 @@ export function useContacts() {
     // /api/chats). Merge in only those NOT already returned by the backend (a chat with activity comes
     // from getChats and wins). Groups aren't stickied (getGroups already lists them all).
     const sticky = useSelector((state: RootState) => state.stickyChats.byId);
-    // Live per-chat activity (bumped on send/receive) merged with the backend's updatedAt → the sort
-    // key. So a chat with a new message jumps to the top without waiting for a getChats refetch.
-    const activity = useSelector((state: RootState) => state.chatUi.activityByChat);
+    // Unread flags per conversation (READ_IN/READ_OUT driven). Chats with unread float to the top.
+    const unreadByChat = useSelector((state: RootState) => state.chatUi.unreadByChat);
     const summaries = useMemo(() => {
         const backendIds = new Set(directSummaries.map((s) => s.conversationId));
         const stickyExtra = Object.values(sticky).filter((s) => !backendIds.has(s.conversationId));
-        const merged = [...directSummaries, ...stickyExtra, ...groupItems.map(toGroupSummary)];
-        const sortKey = (s: ChatSummary) => Math.max(s.updatedAt ?? 0, activity[s.conversationId] ?? 0);
-        return [...merged].sort((a, b) => sortKey(b) - sortKey(a));
-    }, [directSummaries, groupItems, sticky, activity]);
+        return [...directSummaries, ...stickyExtra, ...groupItems.map(toGroupSummary)];
+    }, [directSummaries, groupItems, sticky]);
 
     // Resolve only the 1:1 chat counterparts by id (stable, de-duped key). Groups carry no counterpart
     // (counterpartId ""), so they're excluded — a group's name comes from its own summary.
@@ -52,7 +49,7 @@ export function useContacts() {
     // order label / identity id. Online status comes from presence (PRESENT_* frames). A GROUP renders
     // from its own summary: its name, a group kind, and no presence (no single peer).
     const contacts = useMemo<Contact[]>(
-        () => summaries.map((s) => {
+        () => summaries.map((s): Contact => {
             if (s.kind === "group") {
                 return {
                     id: s.conversationId,
@@ -77,8 +74,17 @@ export function useContacts() {
                 email: ids?.email || p?.email || s.counterpartId,
                 online: p?.online ?? false,
             };
-        }),
-        [summaries, presence, idsById, t]
+        })
+            // Unread first, then alphabetically by name (locale-aware, case-insensitive). Chats don't
+            // reorder as messages arrive — only an unread flag lifts one to the top; opening it (which
+            // clears unread) drops it back into its alphabetical slot.
+            .sort((a, b) => {
+                const ua = unreadByChat[a.id] ? 1 : 0;
+                const ub = unreadByChat[b.id] ? 1 : 0;
+                if (ua !== ub) return ub - ua;
+                return a.name.localeCompare(b.name, undefined, {sensitivity: "base"});
+            }),
+        [summaries, presence, idsById, unreadByChat, t]
     );
 
     const getContactById = useMemo(

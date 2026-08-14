@@ -6,7 +6,7 @@ import {groupApi} from "@/features/groups/rest/groupApi.ts";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
 import {wireToChatMessage} from "@/features/chat/model/mapper.ts";
 import {buildChatAck, buildReadIn, type WireMessage} from "@/features/chat/model/schema/wireMessage.schema.ts";
-import {bumpActivity, markChatUnread, setPeerLastReadId, setTyping} from "@/features/chat/model/slices/chatUiSlice.ts";
+import {markChatUnread, setPeerLastReadId, setTyping} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {markSent} from "@/features/chat/model/slices/outboxSlice.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import {playNotificationSound} from "@/shared/sound/notify.ts";
@@ -41,9 +41,6 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             const msg = wireToChatMessage(frame);
             const chatId = msg.chatId;
             if (!chatId) break;
-
-            // Bump last-activity so the chat sorts to the top of the list on a new message (live).
-            dispatch(bumpActivity({chatId, at: msg.createdAt.getTime()}));
 
             // Append to the open conversation's history (idempotent). No-op if that query has
             // no subscriber (chat not open) — the message loads over REST when it's opened.

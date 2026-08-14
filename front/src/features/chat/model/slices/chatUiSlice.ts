@@ -18,10 +18,6 @@ interface ChatUiState {
     // Per-conversation: has unread incoming message(s). Lives in the store (not component state)
     // so it survives re-renders/navigation and can be set from chatMiddleware.
     unreadByChat: Record<string, boolean>;
-    // Per-conversation last-activity (epoch ms) for LIVE chat-list sorting — bumped on send/receive so
-    // a chat jumps to the top on a new message, without waiting for a getChats refetch. Merged with the
-    // backend's updatedAt at sort time (useContacts). Ephemeral (the refetched updatedAt is the baseline).
-    activityByChat: Record<string, number>;
 }
 
 const initialState: ChatUiState = {
@@ -30,7 +26,6 @@ const initialState: ChatUiState = {
     typingByChat: {},
     typingUserByChat: {},
     unreadByChat: {},
-    activityByChat: {},
 };
 
 const chatUiSlice = createSlice({
@@ -70,11 +65,6 @@ const chatUiSlice = createSlice({
         markChatRead(state, action: PayloadAction<string>) {
             delete state.unreadByChat[action.payload];
         },
-        // Advance a conversation's live-activity time (monotonic) — drives the chat-list sort.
-        bumpActivity(state, action: PayloadAction<{ chatId: string; at: number }>) {
-            const {chatId, at} = action.payload;
-            if (at > (state.activityByChat[chatId] ?? 0)) state.activityByChat[chatId] = at;
-        },
     },
     extraReducers: (builder) => {
         // Drop all per-conversation UI state on logout so a new session starts clean.
@@ -84,11 +74,10 @@ const chatUiSlice = createSlice({
             state.typingByChat = {};
             state.typingUserByChat = {};
             state.unreadByChat = {};
-            state.activityByChat = {};
         });
     },
 });
 
-export const { setSelectedChatId, setPeerLastReadId, setTyping, markChatUnread, markChatRead, bumpActivity } =
+export const { setSelectedChatId, setPeerLastReadId, setTyping, markChatUnread, markChatRead } =
     chatUiSlice.actions;
 export default chatUiSlice.reducer;
