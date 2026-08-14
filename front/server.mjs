@@ -30,6 +30,7 @@ const MIME = {
     ".gif": "image/gif",
     ".ico": "image/x-icon",
     ".webp": "image/webp",
+    ".wasm": "application/wasm",
     ".woff": "font/woff",
     ".woff2": "font/woff2",
     ".ttf": "font/ttf",
