@@ -90,6 +90,7 @@ describe("WebRTCService", () => {
             type: "call:offer",
             to: "peer1",
             offer: { sdp: "offer-sdp", type: "offer" },
+            media: "video",
         });
         expect(onLocalStream).toHaveBeenCalled();
     });

@@ -18,6 +18,7 @@ export function ChatHeader({
     blockedByMe,
     onBack,
     onCall,
+    onAudioCall,
     onToggleBlock,
     onDeleteChat,
 }: {
@@ -32,6 +33,7 @@ export function ChatHeader({
     blockedByMe?: boolean;
     onBack: () => void;
     onCall: () => void;
+    onAudioCall: () => void;
     onToggleBlock?: () => void;
     onDeleteChat: () => void;
 }) {
@@ -83,12 +85,23 @@ export function ChatHeader({
 
                 {!isGroup && (
                     <button
+                        onClick={onAudioCall}
+                        title={t("chat.audioCall")}
+                        aria-label={t("chat.audioCall")}
+                        className="hover:opacity-80 text-xl"
+                    >
+                        📞
+                    </button>
+                )}
+
+                {!isGroup && (
+                    <button
                         onClick={onCall}
                         title={t("chat.call")}
                         aria-label={t("chat.call")}
                         className="hover:opacity-80 text-xl"
                     >
-                        📞
+                        📹
                     </button>
                 )}
 

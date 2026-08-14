@@ -24,6 +24,9 @@ export default function VideoCall({
     const {t} = useTranslation();
     const localVideoRef = useRef<HTMLVideoElement>(null);
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
+    const audioOnly = useSelector((state: RootState) => state.call.audioOnly);
 
     useEffect(() => {
         if (localVideoRef.current && localStream) {
@@ -32,10 +35,11 @@ export default function VideoCall({
     }, [localStream]);
 
     useEffect(() => {
-        if (remoteVideoRef.current && remoteStream) {
-            remoteVideoRef.current.srcObject = remoteStream;
-        }
-    }, [remoteStream]);
+        // Attach the remote stream to whichever element is mounted for the current mode (video panel
+        // for a video call, hidden audio element for a voice call) so the remote sound always plays.
+        const el = audioOnly ? remoteAudioRef.current : remoteVideoRef.current;
+        if (el && remoteStream) el.srcObject = remoteStream;
+    }, [remoteStream, audioOnly]);
 
     const callFrom = useSelector((state: RootState) => state.call.peerId);
     const callStatus = useSelector((state: RootState) => state.call.status);
@@ -66,11 +70,35 @@ export default function VideoCall({
         );
     }
 
+    const statusLine = callStatus === "calling"
+        ? t("call.calling", {name: callerName})
+        : callStatus === "connecting" ? t("call.connecting") : null;
+
+    if (audioOnly) {
+        return (
+            <div className="fixed inset-0 bg-teal-950 z-50 flex flex-col items-center justify-center text-white">
+                <div className="w-28 h-28 rounded-full bg-teal-800 flex items-center justify-center text-5xl font-semibold">
+                    {(callerName || "?").charAt(0).toUpperCase()}
+                </div>
+                <div className="mt-5 text-2xl font-medium">{callerName}</div>
+                <div className="mt-1 text-sm text-teal-300">🎙 {statusLine ?? t("call.audioCall")}</div>
+                {/* Remote audio (no video track in a voice call) */}
+                <audio autoPlay playsInline ref={remoteAudioRef} className="hidden"/>
+                <button
+                    onClick={onHangUp}
+                    className="absolute bottom-10 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-full hover:bg-red-700 transition-colors"
+                >
+                    {t("call.hangUp")}
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="fixed inset-0 bg-black z-50 flex">
-            {(callStatus === "calling" || callStatus === "connecting") && (
+            {statusLine && (
                 <div className="absolute top-8 inset-x-0 text-center text-white text-lg z-10">
-                    {callStatus === "calling" ? t("call.calling", {name: callerName}) : t("call.connecting")}
+                    {statusLine}
                 </div>
             )}
             <video

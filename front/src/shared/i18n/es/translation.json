@@ -60,6 +60,7 @@
     "back": "Atrás",
     "messagePlaceholder": "Escribe un mensaje",
     "call": "Videollamada",
+    "audioCall": "Llamada de voz",
     "read": "Leído",
     "sent": "Enviado",
     "sending": "enviando…",
@@ -125,6 +126,7 @@
   },
   "call": {
     "incoming": "Llamada entrante",
+    "audioCall": "Llamada de voz",
     "callingYou": "Te está llamando {{name}}",
     "calling": "Llamando a {{name}}…",
     "connecting": "Conectando…",

@@ -118,17 +118,24 @@ describe("callMiddleware", () => {
 
     it("call/outgoingCall вызывает startCall когда есть беседа с абонентом", async () => {
         store.getState = vi.fn(() => stateWithConversation("peer5", { status: "idle", peerId: null, incomingOfferData: null }));
-        const action = { type: "call/outgoingCall", payload: "peer5" };
+        const action = { type: "call/outgoingCall", payload: { peerId: "peer5", audioOnly: false } };
         await middleware(store)(next)(action);
-        expect(webRTCService.startCall).toHaveBeenCalledWith("peer5");
+        expect(webRTCService.startCall).toHaveBeenCalledWith("peer5", false);
     });
 
     it("call/outgoingCall БЕЗ беседы не звонит, а диспатчит localEnd", async () => {
         store.getState = vi.fn(() => stateWithConversation("someoneElse", { status: "idle", peerId: null, incomingOfferData: null }));
-        const action = { type: "call/outgoingCall", payload: "peer5" };
+        const action = { type: "call/outgoingCall", payload: { peerId: "peer5", audioOnly: false } };
         await middleware(store)(next)(action);
         expect(webRTCService.startCall).not.toHaveBeenCalled();
         expect(store.dispatch).toHaveBeenCalledWith(localEnd());
+    });
+
+    it("call/outgoingCall audio-only передаёт audioOnly=true в startCall", async () => {
+        store.getState = vi.fn(() => stateWithConversation("peer6", { status: "idle", peerId: null, incomingOfferData: null }));
+        const action = { type: "call/outgoingCall", payload: { peerId: "peer6", audioOnly: true } };
+        await middleware(store)(next)(action);
+        expect(webRTCService.startCall).toHaveBeenCalledWith("peer6", true);
     });
 
     it("call/acceptCall вызывает handleOffer если есть incomingOfferData", async () => {

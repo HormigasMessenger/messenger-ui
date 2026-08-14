@@ -7,17 +7,21 @@ const callSlice = createSlice({
     status: "idle" as "idle" | "ringing" | "calling" | "connecting" | "in_call",
     peerId: null as string | null,
     incomingOfferData: null as FromOffer | null,
+    // Current call is audio-only (voice) → the UI hides video and the service opens no camera.
+    audioOnly: false,
   },
   reducers: {
-    outgoingCall: (state, action: PayloadAction<string>) => {
+    outgoingCall: (state, action: PayloadAction<{ peerId: string; audioOnly?: boolean }>) => {
       state.status = "calling";
-      state.peerId = action.payload;
+      state.peerId = action.payload.peerId;
+      state.audioOnly = action.payload.audioOnly ?? false;
     },
 
     incomingOffer: (state, action: PayloadAction<FromOffer>) => {
       state.status = "ringing";
       state.peerId = action.payload.from;
       state.incomingOfferData = action.payload; // 🔥 сохраняем offer
+      state.audioOnly = action.payload.media === "audio";
     },
 
     acceptCall: (state) => {
@@ -36,12 +40,14 @@ const callSlice = createSlice({
       state.status = "idle";
       state.peerId = null;
       state.incomingOfferData = null;
+      state.audioOnly = false;
     },
 
     rejectCall: (state) => {
       state.status = "idle";
       state.peerId = null;
       state.incomingOfferData = null;
+      state.audioOnly = false;
     },
 
 
@@ -49,6 +55,7 @@ const callSlice = createSlice({
       state.status = "idle";
       state.peerId = null;
       state.incomingOfferData = null;
+      state.audioOnly = false;
     },
   },
 });

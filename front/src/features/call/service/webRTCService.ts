@@ -17,6 +17,9 @@ export class WebRTCService {
     private remotePeerId: string | null = null;
     private pendingIce: RTCIceCandidateInit[] = [];
     private remoteReady: boolean = false;
+    // Audio-only (voice) call → init() opens the mic without a camera. Set per call by startCall (caller)
+    // / handleOffer (callee) before init runs.
+    private audioOnly: boolean = false;
 
     /* ======================
        Callbacks for React state updates
@@ -105,7 +108,7 @@ export class WebRTCService {
         this.pc = pc;
 
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: true,
+            video: !this.audioOnly,
             audio: true,
         });
 
@@ -147,11 +150,12 @@ export class WebRTCService {
     /* ======================
        Start call (caller)
     ====================== */
-    public async startCall(peerId: string) {
+    public async startCall(peerId: string, audioOnly: boolean = false) {
         if (this.pc) return;
 
-        logger.debug("video call starting with", peerId);
+        logger.debug(audioOnly ? "audio call starting with" : "video call starting with", peerId);
 
+        this.audioOnly = audioOnly;
         this.remotePeerId = peerId;
 
         try {
@@ -170,19 +174,22 @@ export class WebRTCService {
             type: "call:offer",
             to: peerId,
             offer,
+            media: audioOnly ? "audio" : "video",
         });
     }
 
     /* ======================
        Handle offer (callee)
     ====================== */
-    public async handleOffer({from, offer}: FromOffer) {
+    public async handleOffer({from, offer, media}: FromOffer) {
         if (this.pc) {
             this.send({type: "call:end", to: from});
             throw new Error("Already in call");
         }
 
-        logger.debug("video call accepting offer");
+        // Match the caller's media choice so an audio call doesn't turn on our camera.
+        this.audioOnly = media === "audio";
+        logger.debug(this.audioOnly ? "audio call accepting offer" : "video call accepting offer");
 
         this.remotePeerId = from;
 

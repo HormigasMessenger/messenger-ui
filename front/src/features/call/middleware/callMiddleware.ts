@@ -42,7 +42,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                             webRTCService.declineOffer(msg.from);
                             break;
                         }
-                        dispatch(incomingOffer({from: msg.from, offer: msg.offer}));
+                        dispatch(incomingOffer({from: msg.from, offer: msg.offer, media: msg.media}));
                         break;
                     }
 
@@ -70,7 +70,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
            Outgoing call
         ====================== */
         if (callAction.type === "call/outgoingCall") {
-            const peerId = (action as PayloadAction<string>).payload;
+            const {peerId, audioOnly} = (action as PayloadAction<{ peerId: string; audioOnly?: boolean }>).payload;
 
             // A call frame needs a conversationId (resolved from the chat directory by counterpart id)
             // or the backend drops the SIGNAL_IN and the caller hangs on "calling" until the 30s
@@ -84,7 +84,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                 return result;
             }
 
-            webRTCService.startCall(peerId)
+            webRTCService.startCall(peerId, audioOnly ?? false)
                 .then(() => {
                     // Успешно начали звонок
                 })

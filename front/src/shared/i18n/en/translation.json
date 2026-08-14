@@ -60,6 +60,7 @@
     "back": "Back",
     "messagePlaceholder": "Type a message",
     "call": "Video call",
+    "audioCall": "Voice call",
     "read": "Read",
     "sent": "Sent",
     "sending": "sending…",
@@ -125,6 +126,7 @@
   },
   "call": {
     "incoming": "Incoming call",
+    "audioCall": "Voice call",
     "callingYou": "{{name}} is calling you",
     "calling": "Calling {{name}}…",
     "connecting": "Connecting…",

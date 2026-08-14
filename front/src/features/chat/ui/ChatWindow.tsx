@@ -26,6 +26,7 @@ interface ChatWindowProps {
     sendMessage: (text: string) => void;
     onDeleteChat: () => void;
     onCall: () => void;
+    onAudioCall: () => void;
     onTyping?: () => void;
     onToggleBlock?: () => void;
     blocked?: boolean;
@@ -53,6 +54,7 @@ function ChatWindow({
                         sendMessage,
                         onDeleteChat,
                         onCall,
+                        onAudioCall,
                         onTyping,
                         onToggleBlock,
                         blocked,
@@ -237,6 +239,7 @@ function ChatWindow({
                 blockedByMe={blockedByMe}
                 onBack={() => dispatch(setSelectedChatId(null))}
                 onCall={onCall}
+                onAudioCall={onAudioCall}
                 onToggleBlock={onToggleBlock}
                 onDeleteChat={onDeleteChat}
             />

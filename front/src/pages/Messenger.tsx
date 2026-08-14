@@ -62,7 +62,7 @@ export default function Messenger() {
         const caller = searchParams.get("caller");
         if (!callParam) return;
         openChat(callParam);
-        if (caller) dispatch(outgoingCall(caller));
+        if (caller) dispatch(outgoingCall({peerId: caller}));
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");
@@ -91,7 +91,10 @@ export default function Messenger() {
     const onOpenDeleteModal = useCallback(() => setShowDeleteModal(true), []);
     const onCall = useCallback(() => {
         // Call the counterpart's USER id (signaling recipient), not the conversationId.
-        if (selectedCounterpartId) dispatch(outgoingCall(selectedCounterpartId));
+        if (selectedCounterpartId) dispatch(outgoingCall({peerId: selectedCounterpartId, audioOnly: false}));
+    }, [selectedCounterpartId, dispatch]);
+    const onAudioCall = useCallback(() => {
+        if (selectedCounterpartId) dispatch(outgoingCall({peerId: selectedCounterpartId, audioOnly: true}));
     }, [selectedCounterpartId, dispatch]);
 
     /* ======================
@@ -138,6 +141,7 @@ export default function Messenger() {
                 onDiscardMessage={chat.discardMessage}
                 onDeleteChat={onOpenDeleteModal}
                 onCall={onCall}
+                onAudioCall={onAudioCall}
             />
 
             {/* ===== Video Call ===== */}
