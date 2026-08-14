@@ -1,5 +1,6 @@
 import {useTranslation} from "react-i18next";
 import type {Contact} from "@/entities/contact";
+import {PhoneIcon, VideoIcon} from "@/shared/ui/icons.tsx";
 
 /**
  * Chat window header: counterpart name + presence line (typing / online / last-seen / offline) and
@@ -88,9 +89,9 @@ export function ChatHeader({
                         onClick={onAudioCall}
                         title={t("chat.audioCall")}
                         aria-label={t("chat.audioCall")}
-                        className="hover:opacity-80 text-xl"
+                        className="hover:opacity-80 p-1"
                     >
-                        📞
+                        <PhoneIcon/>
                     </button>
                 )}
 
@@ -99,9 +100,9 @@ export function ChatHeader({
                         onClick={onCall}
                         title={t("chat.call")}
                         aria-label={t("chat.call")}
-                        className="hover:opacity-80 text-xl"
+                        className="hover:opacity-80 p-1"
                     >
-                        🎥
+                        <VideoIcon/>
                     </button>
                 )}
 

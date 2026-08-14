@@ -2,6 +2,7 @@ import {useCallback, useEffect, useRef, type RefObject} from "react";
 import {useTranslation} from "react-i18next";
 import {useVoiceRecorder} from "@/features/chat/hooks/useVoiceRecorder.ts";
 import {VOICE_MAX_DURATION_MS} from "@/shared/config/chat.ts";
+import {MicIcon} from "@/shared/ui/icons.tsx";
 
 function formatMs(ms: number): string {
     const s = Math.floor(ms / 1000);
@@ -118,9 +119,9 @@ export function Composer({
                         onClick={() => void start()}
                         title={t("chat.recordVoice")}
                         aria-label={t("chat.recordVoice")}
-                        className="text-2xl px-1 hover:opacity-80"
+                        className="p-1.5 text-gray-600 hover:opacity-80"
                     >
-                        🎤
+                        <MicIcon/>
                     </button>
                     <textarea
                         ref={inputRef}
