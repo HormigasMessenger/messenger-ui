@@ -71,7 +71,11 @@ export function useVoiceRecorder() {
             chunksRef.current = [];
             rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
             rec.onstop = () => {
-                const type = mimeRef.current || "audio/webm";
+                // Upload a CLEAN base content-type ("audio/webm"), NOT the recorder's parameterized
+                // "audio/webm;codecs=opus" — the `;codecs=…` parameter trips server-side attachment
+                // handling (the message wasn't durably stored, so a voice note vanished on the next
+                // history refetch). The webm/opus bytes are unchanged; browsers play "audio/webm" fine.
+                const type = (mimeRef.current || "audio/webm").split(";")[0];
                 const file = chunksRef.current.length > 0
                     ? new File([new Blob(chunksRef.current, {type})], `voice-${Date.now()}.${extForMime(type)}`, {type})
                     : null;

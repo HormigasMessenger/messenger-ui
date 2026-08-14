@@ -101,7 +101,7 @@ export function ChatHeader({
                         aria-label={t("chat.call")}
                         className="hover:opacity-80 text-xl"
                     >
-                        📹
+                        🎥
                     </button>
                 )}
 
