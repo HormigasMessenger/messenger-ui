@@ -9,7 +9,7 @@ import { useGetGroupsQuery } from "@/features/groups";
 // useContacts now derives the chat list from GET /chats (ChatSummary[]) and resolves counterpart
 // names via the IDS directory by id (useGetIdsUsersByIdsQuery), with presence as a fallback.
 // useSelector is stubbed against a fake state so the hook's myId / presence selectors resolve.
-const fakeState = { user: { id: "user1" }, presence: { byId: {} } };
+const fakeState = { user: { id: "user1" }, presence: { byId: {} }, stickyChats: { byId: {} } };
 
 vi.mock("react-i18next", () => ({useTranslation: () => ({t: (k: string) => k})}));
 vi.mock("react-redux", () => ({
@@ -32,6 +32,7 @@ describe("useContacts", () => {
         );
         // Default: no groups (tests that care set their own return).
         (useGetGroupsQuery as unknown as Mock).mockReturnValue({ data: [], isLoading: false });
+        fakeState.stickyChats.byId = {};
     });
 
     it("returns empty contacts while the chat list is loading", () => {
@@ -98,6 +99,24 @@ describe("useContacts", () => {
         ]);
         // getSummary resolves the group too (so opening it works: kind group, no counterpart).
         expect(result.current.getSummary("g1")).toMatchObject({kind: "group", counterpartId: ""});
+    });
+
+    it("merges a sticky DIRECT chat the backend hid (empty) but drops it once the backend returns it", () => {
+        (useGetChatsQuery as unknown as Mock).mockReturnValue({ data: [], isLoading: false, isError: false });
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({ data: {} });
+        fakeState.stickyChats.byId = {
+            s1: { conversationId: "s1", kind: "direct", counterpartId: "userS", blocked: false, blockedByMe: false, blockedByPeer: false },
+        };
+        const shown = renderHook(() => useContacts());
+        expect(shown.result.current.contacts.map((c) => c.id)).toContain("s1");
+
+        // Once it has activity the backend returns it → the sticky copy must NOT duplicate it.
+        (useGetChatsQuery as unknown as Mock).mockReturnValue({
+            data: [{ conversationId: "s1", kind: "direct", counterpartId: "userS", blocked: false }],
+            isLoading: false, isError: false,
+        });
+        const withBackend = renderHook(() => useContacts());
+        expect(withBackend.result.current.contacts.filter((c) => c.id === "s1")).toHaveLength(1);
     });
 
     it("surfaces the chat-list error flag", () => {

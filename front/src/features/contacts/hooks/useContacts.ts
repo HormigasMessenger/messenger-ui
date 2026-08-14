@@ -21,10 +21,15 @@ export function useContacts() {
     const {data: directSummaries = [], isLoading: chatsLoading, isError} = useGetChatsQuery({myId}, {skip});
     const {data: groupItems = [], isLoading: groupsLoading} = useGetGroupsQuery(undefined, {skip});
     const isLoading = chatsLoading || groupsLoading;
-    const summaries = useMemo(
-        () => [...directSummaries, ...groupItems.map(toGroupSummary)],
-        [directSummaries, groupItems],
-    );
+    // Sticky DIRECT chats the user engaged with but the backend hides (empty → omitted from
+    // /api/chats). Merge in only those NOT already returned by the backend (a chat with activity comes
+    // from getChats and wins). Groups aren't stickied (getGroups already lists them all).
+    const sticky = useSelector((state: RootState) => state.stickyChats.byId);
+    const summaries = useMemo(() => {
+        const backendIds = new Set(directSummaries.map((s) => s.conversationId));
+        const stickyExtra = Object.values(sticky).filter((s) => !backendIds.has(s.conversationId));
+        return [...directSummaries, ...stickyExtra, ...groupItems.map(toGroupSummary)];
+    }, [directSummaries, groupItems, sticky]);
 
     // Resolve only the 1:1 chat counterparts by id (stable, de-duped key). Groups carry no counterpart
     // (counterpartId ""), so they're excluded — a group's name comes from its own summary.

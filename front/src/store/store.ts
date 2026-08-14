@@ -7,6 +7,7 @@ import wsReducer from "@/infrastructure/slices/websocketSlice.ts";
 import chatUiReducer from "@/features/chat/model/slices/chatUiSlice";
 import outboxReducer, { hydrateOutbox, markPersisted } from "@/features/chat/model/slices/outboxSlice";
 import presenceReducer from "@/features/presence/model/presenceSlice";
+import stickyChatsReducer, { saveStickyChats } from "@/features/chat/model/slices/stickyChatsSlice";
 
 // Middleware
 import { createCallMiddleware } from "@/features/call/middleware/callMiddleware";
@@ -31,6 +32,7 @@ export function configureAppStore(webRTCService: WebRTCService) {
             user: userReducer,
             chatUi: chatUiReducer,
             presence: presenceReducer,
+            stickyChats: stickyChatsReducer,
             [chatApi.reducerPath]: chatApi.reducer,
             [contactsApi.reducerPath]: contactsApi.reducer,
             [idsApi.reducerPath]: idsApi.reducer,
@@ -62,6 +64,14 @@ export function configureAppStore(webRTCService: WebRTCService) {
             // enqueued during the async put would otherwise be marked persisted but never written).
             saveOutboxToDB(cur).then(() => store.dispatch(markPersisted(savedVersion)));
         }, 400);
+    });
+
+    // Persist the sticky-chats set to localStorage whenever it changes (Immer gives a fresh byId
+    // reference only on an actual change, so this writes just on remember/forget/clear).
+    let lastSticky = store.getState().stickyChats.byId;
+    store.subscribe(() => {
+        const cur = store.getState().stickyChats.byId;
+        if (cur !== lastSticky) { lastSticky = cur; saveStickyChats(cur); }
     });
 
     webRTCService.setSendCallback((data) => {

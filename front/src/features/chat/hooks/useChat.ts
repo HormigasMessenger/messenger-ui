@@ -1,6 +1,7 @@
 import {useCallback, useMemo, useState, useEffect} from "react";
 import {useDispatch, useSelector} from "react-redux";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice";
+import {rememberSticky, forgetSticky} from "@/features/chat/model/slices/stickyChatsSlice";
 import type {AppDispatch, RootState} from "@/store/store";
 
 import {useChatMessages} from "./useChatMessages";
@@ -49,6 +50,16 @@ export function useChat() {
             dispatch(setSelectedChatId(null));
         }
     }, [selectedChatId, summaries, isLoadingIds, dispatch]);
+
+    // Remember an opened DIRECT chat so it stays in the list even after it goes empty (the backend hides
+    // message-less conversations from /api/chats). Re-storing the same summary is an Immer no-op, so this
+    // settles (no loop) even though remembering feeds back into `summaries` → getSummary; a getChats
+    // refetch just refreshes the stored snapshot once.
+    useEffect(() => {
+        if (!selectedChatId) return;
+        const s = getSummary(selectedChatId);
+        if (s && s.kind !== "group") dispatch(rememberSticky(s));
+    }, [selectedChatId, getSummary, dispatch]);
 
     // Declared before the handlers that reference them (reloadChatHistory/clearChat/markRead).
     const {unreadChats, markRead} = useUnreadChats();
@@ -110,9 +121,11 @@ export function useChat() {
     }, [dispatch, markRead, sendReadReceipt]);
 
     const deleteChat = useCallback(async () => {
+        // Explicit delete: also forget it as sticky so it doesn't reappear as an "empty" chat.
+        if (selectedChatId) dispatch(forgetSticky(selectedChatId));
         await clearChat();
         dispatch(setSelectedChatId(null));
-    }, [clearChat, dispatch]);
+    }, [clearChat, dispatch, selectedChatId]);
 
     // Outbox delivery status (per-message 🕐 / ⚠ + retry/discard) lives in its own hook.
     const {outboxStatusById, retryMessage, discardMessage} = useOutboxStatus({selectedChatId, myId});
