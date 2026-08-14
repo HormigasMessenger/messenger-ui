@@ -21,27 +21,81 @@ const SCOPE_PATH = (() => {
     try { return new URL(self.registration.scope).pathname; } catch (e) { return "/"; }
 })();
 
-// Cross-channel dedup: messageId → expiry timestamp. Best-effort, in-memory (a dup requires both
-// channels to fire within seconds, during which the SW stays alive). Bounded by TTL cleanup.
-const DEDUP_TTL_MS = 60_000;
+// Cross-channel dedup in TWO layers, keyed by messageId:
+//  L1 — in-memory Map (this SW lifetime): wins the near-simultaneous online/offline race SYNCHRONOUSLY.
+//  L2 — IndexedDB (durable across SW restarts): suppresses the backend's guaranteed REDELIVERY. The
+//       server re-sends the SAME offline push until the message is acked (the user comes back online →
+//       CHAT_ACK on reconnect). The SW is killed when idle, so a purely in-memory guard would re-show
+//       (and re-buzz) on every redelivery. L2 remembers the id past the SW's death. (webpush's own dedup
+//       is in-memory/best-effort and explicitly delegates durable coalescing to the browser.)
+const DEDUP_TTL_MS = 60_000;                     // L1 window
+const PERSIST_TTL_MS = 3 * 24 * 60 * 60 * 1000;  // L2: remember a shown message for a few days
 const shownRecently = new Map();
 
-// Synchronously claim the right to show `messageId` (no await before the set → race-free between the
-// push and message events). Returns false if it was already claimed within the TTL. A missing id
-// cannot be deduped, so it always shows.
-function claimShow(messageId) {
+function openDedupDb() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open("hormiga-push-dedup", 1);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains("seen")) db.createObjectStore("seen");
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// Durably claim `id`: true if newly recorded (show), false if already shown within PERSIST_TTL_MS
+// (a redelivery → drop). Opportunistically prunes expired entries so the store stays bounded.
+async function idbClaim(id, now, ttl) {
+    const db = await openDedupDb();
+    try {
+        return await new Promise((resolve, reject) => {
+            const tx = db.transaction("seen", "readwrite");
+            const store = tx.objectStore("seen");
+            let isDup = false;
+            const getReq = store.get(id);
+            getReq.onsuccess = () => {
+                const exp = getReq.result;
+                if (typeof exp === "number" && exp > now) { isDup = true; return; }
+                store.put(now + ttl, id);
+                if (Math.random() < 0.1) {
+                    const cur = store.openCursor();
+                    cur.onsuccess = () => {
+                        const c = cur.result;
+                        if (!c) return;
+                        if (typeof c.value === "number" && c.value <= now) c.delete();
+                        c.continue();
+                    };
+                }
+            };
+            tx.oncomplete = () => resolve(!isDup);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error("dedup tx abort"));
+        });
+    } finally {
+        db.close();
+    }
+}
+
+// Claim the right to show `messageId`. L1 (sync) is claimed BEFORE any await so the push/message events
+// can't both pass in one lifetime; L2 (IndexedDB) then suppresses cross-restart redelivery. A missing id
+// can't be deduped → always shows.
+async function claimShow(messageId) {
     const now = Date.now();
     for (const [k, exp] of shownRecently) { if (exp <= now) shownRecently.delete(k); }
     if (!messageId) return true;
-    if (shownRecently.has(messageId)) return false;
+    if (shownRecently.has(messageId)) return false;   // L1: already claimed this lifetime
     shownRecently.set(messageId, now + DEDUP_TTL_MS);
+    try {
+        if (!(await idbClaim(messageId, now, PERSIST_TTL_MS))) return false; // L2: shown in a prior lifetime
+    } catch (e) { /* IndexedDB unavailable → fall back to L1 only */ }
     return true;
 }
 
 async function showChatNotification(payload) {
     const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
-    // Dedup across channels first (synchronous claim above any await).
-    if (!claimShow(data.messageId)) return;
+    // Dedup across channels + across the backend's redelivery (L1 sync claim, then durable L2).
+    if (!(await claimShow(data.messageId))) return;
 
     const isCall = data.kind === "call";
     const title = (payload && payload.title) || (isCall ? "Incoming call" : "New message");
@@ -99,6 +153,12 @@ self.addEventListener("notificationclick", (event) => {
         if (data.conversationId) qs.set("call", data.conversationId);
         if (data.senderId) qs.set("caller", data.senderId);
         target = base + "?" + qs.toString();
+    } else if (!data.url && data.conversationId) {
+        // OFFLINE message push carries no `url` (the webpush payload is {conversationId, messageId,
+        // senderId, kind}). Build the same ?chat= deep link the online path uses, so tapping the
+        // notification opens the RIGHT conversation instead of the app root. (Messenger reads ?chat=.)
+        const base = new URL(SCOPE_PATH, self.registration.scope).href;
+        target = base + "?chat=" + encodeURIComponent(data.conversationId);
     }
     event.waitUntil((async () => {
         const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
