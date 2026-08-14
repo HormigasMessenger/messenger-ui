@@ -9,7 +9,7 @@ import { useGetGroupsQuery } from "@/features/groups";
 // useContacts now derives the chat list from GET /chats (ChatSummary[]) and resolves counterpart
 // names via the IDS directory by id (useGetIdsUsersByIdsQuery), with presence as a fallback.
 // useSelector is stubbed against a fake state so the hook's myId / presence selectors resolve.
-const fakeState = { user: { id: "user1" }, presence: { byId: {} }, stickyChats: { byId: {} } };
+const fakeState = { user: { id: "user1" }, presence: { byId: {} }, stickyChats: { byId: {} }, chatUi: { activityByChat: {} as Record<string, number> } };
 
 vi.mock("react-i18next", () => ({useTranslation: () => ({t: (k: string) => k})}));
 vi.mock("react-redux", () => ({
@@ -33,6 +33,7 @@ describe("useContacts", () => {
         // Default: no groups (tests that care set their own return).
         (useGetGroupsQuery as unknown as Mock).mockReturnValue({ data: [], isLoading: false });
         fakeState.stickyChats.byId = {};
+        fakeState.chatUi.activityByChat = {};
     });
 
     it("returns empty contacts while the chat list is loading", () => {
@@ -117,6 +118,33 @@ describe("useContacts", () => {
         });
         const withBackend = renderHook(() => useContacts());
         expect(withBackend.result.current.contacts.filter((c) => c.id === "s1")).toHaveLength(1);
+    });
+
+    it("sorts the list by last activity (updatedAt), newest first", () => {
+        (useGetChatsQuery as unknown as Mock).mockReturnValue({
+            data: [
+                { conversationId: "old", kind: "direct", counterpartId: "u1", blocked: false, updatedAt: 1000 },
+                { conversationId: "new", kind: "direct", counterpartId: "u2", blocked: false, updatedAt: 5000 },
+            ],
+            isLoading: false, isError: false,
+        });
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({ data: {} });
+        const { result } = renderHook(() => useContacts());
+        expect(result.current.contacts.map((c) => c.id)).toEqual(["new", "old"]);
+    });
+
+    it("live activity floats a chat above one with a more-recent backend updatedAt", () => {
+        (useGetChatsQuery as unknown as Mock).mockReturnValue({
+            data: [
+                { conversationId: "a", kind: "direct", counterpartId: "u1", blocked: false, updatedAt: 1000 },
+                { conversationId: "b", kind: "direct", counterpartId: "u2", blocked: false, updatedAt: 5000 },
+            ],
+            isLoading: false, isError: false,
+        });
+        (useGetIdsUsersByIdsQuery as unknown as Mock).mockReturnValue({ data: {} });
+        fakeState.chatUi.activityByChat = { a: 9000 }; // "a" just got a message → floats above "b"
+        const { result } = renderHook(() => useContacts());
+        expect(result.current.contacts.map((c) => c.id)).toEqual(["a", "b"]);
     });
 
     it("surfaces the chat-list error flag", () => {

@@ -25,11 +25,16 @@ export function useContacts() {
     // /api/chats). Merge in only those NOT already returned by the backend (a chat with activity comes
     // from getChats and wins). Groups aren't stickied (getGroups already lists them all).
     const sticky = useSelector((state: RootState) => state.stickyChats.byId);
+    // Live per-chat activity (bumped on send/receive) merged with the backend's updatedAt → the sort
+    // key. So a chat with a new message jumps to the top without waiting for a getChats refetch.
+    const activity = useSelector((state: RootState) => state.chatUi.activityByChat);
     const summaries = useMemo(() => {
         const backendIds = new Set(directSummaries.map((s) => s.conversationId));
         const stickyExtra = Object.values(sticky).filter((s) => !backendIds.has(s.conversationId));
-        return [...directSummaries, ...stickyExtra, ...groupItems.map(toGroupSummary)];
-    }, [directSummaries, groupItems, sticky]);
+        const merged = [...directSummaries, ...stickyExtra, ...groupItems.map(toGroupSummary)];
+        const sortKey = (s: ChatSummary) => Math.max(s.updatedAt ?? 0, activity[s.conversationId] ?? 0);
+        return [...merged].sort((a, b) => sortKey(b) - sortKey(a));
+    }, [directSummaries, groupItems, sticky, activity]);
 
     // Resolve only the 1:1 chat counterparts by id (stable, de-duped key). Groups carry no counterpart
     // (counterpartId ""), so they're excluded — a group's name comes from its own summary.

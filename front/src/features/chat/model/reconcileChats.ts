@@ -1,7 +1,7 @@
 import type {ChatSummary} from "@/entities/conversation";
 
 /** A row of GET /api/groups (the group list is its own resource, separate from DIRECT /api/chats). */
-export type RawGroupListItem = {id: string; name?: string; memberCount?: number};
+export type RawGroupListItem = {id: string; name?: string; memberCount?: number; updatedAt?: string | null};
 
 /**
  * Map a GET /api/groups row to a chat-list ChatSummary. Groups are a SEPARATE resource in the deployed
@@ -14,6 +14,7 @@ export function toGroupSummary(g: RawGroupListItem): ChatSummary {
         counterpartId: "",
         name: g.name,
         memberIds: [],
+        updatedAt: toEpochMs(g.updatedAt),
         blocked: false,
         blockedByMe: false,
         blockedByPeer: false,
@@ -35,7 +36,15 @@ export type RawConversation = {
     masterBlocked?: boolean;
     clientReadReceipt?: string | null;
     masterReadReceipt?: string | null;
+    updatedAt?: string | null;
 };
+
+/** ISO-8601 (or epoch) → epoch ms, or undefined if unparseable. Used for the chat-list sort. */
+function toEpochMs(v: string | number | null | undefined): number | undefined {
+    if (v == null) return undefined;
+    const ms = typeof v === "number" ? v : Date.parse(v);
+    return Number.isNaN(ms) ? undefined : ms;
+}
 
 /**
  * Map one backend Conversation to the caller-relative chat-list item. Discriminates DIRECT vs GROUP by
@@ -44,6 +53,7 @@ export type RawConversation = {
  * comes from metadata.name; the roster is empty here (loaded on open).
  */
 export function toChatSummary(c: RawConversation, myId: string): ChatSummary {
+    const updatedAt = toEpochMs(c.updatedAt);
     const isGroup = c.clientId == null || c.masterId == null;
     if (isGroup) {
         return {
@@ -52,6 +62,7 @@ export function toChatSummary(c: RawConversation, myId: string): ChatSummary {
             counterpartId: "",
             name: c.metadata?.name,
             memberIds: [],
+            updatedAt,
             orderId: c.metadata?.orderId,
             blocked: false,
             blockedByMe: false,
@@ -65,6 +76,7 @@ export function toChatSummary(c: RawConversation, myId: string): ChatSummary {
         conversationId: c.id,
         kind: "direct",
         counterpartId: (amClient ? c.masterId : c.clientId) as string,
+        updatedAt,
         orderId: c.metadata?.orderId,
         blocked: blockedByMe || blockedByPeer,
         blockedByMe,

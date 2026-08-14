@@ -12,6 +12,7 @@ export type ChatSummary = {
     counterpartId: string;   // DIRECT: the peer's id. GROUP: "" — a group has no single counterpart.
     name?: string;           // GROUP: display name (from metadata.name). DIRECT: undefined (derived elsewhere).
     memberIds?: string[];    // GROUP: roster when known. The chat LIST carries none (loaded per-group on open).
+    updatedAt?: number;      // epoch ms of last activity (from the backend) — the chat-list sort baseline.
     orderId?: string;
     blocked: boolean;        // DIRECT only (block is a mutual/terminal per-pair stop). GROUP: always false.
     blockedByMe: boolean;    // I blocked the peer (I can unblock)
