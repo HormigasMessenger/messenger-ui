@@ -26,3 +26,7 @@ export const IMAGE_COMPRESS_MIN_BYTES = 150 * 1024; // don't bother compressing 
 // covers 1x/2x crisply while staying tiny.
 export const THUMB_MAX_DIMENSION = 320;
 export const THUMB_QUALITY = 0.6;
+// Cap the number of cached thumbnails (FIFO by generation — oldest evicted first). Each thumb is a
+// ~320px WebP (~5–25 KB), so 500 bounds the cache to roughly 3–12 MB. The browser can also evict the
+// whole origin under storage pressure; either way a miss just re-resolves + re-generates (no data loss).
+export const THUMB_CACHE_MAX = 500;

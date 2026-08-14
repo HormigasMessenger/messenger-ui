@@ -4,6 +4,7 @@ import {useTranslation} from "react-i18next";
 
 import {isUlid} from "@/shared/ulid/ulid.ts";
 import {useBlockChatMutation, useUnblockChatMutation, useDeleteMessageMutation} from "@/features/chat/rest/chatApi.ts";
+import {deleteThumbFromDB} from "@/features/chat/db/db.ts";
 
 type BlockSummary = {blocked?: boolean; blockedByMe?: boolean; blockedByPeer?: boolean} | null | undefined;
 
@@ -41,7 +42,7 @@ export function useChatModeration(params: {
         } catch { toast.error(t("chat.blockError")); }
     }, [selectedChatId, selectedBlockedByMe, unblockChat, blockChat, t]);
 
-    const deleteMessage = useCallback(async (messageId: string) => {
+    const deleteMessage = useCallback(async (messageId: string, attachmentId?: string) => {
         if (!selectedChatId) return;
         // The backend deletes by EITHER id, so send the one we have — no cache read, no refetch.
         // A ULID is the server id (backendId); anything else is still the temporary client id
@@ -53,6 +54,8 @@ export function useChatModeration(params: {
                 backendId: server ? messageId : undefined,
                 clientMessageId: server ? undefined : messageId,
             }).unwrap();
+            // Deleted an image → drop its cached thumbnail too (no orphan lingering until logout).
+            if (attachmentId) deleteThumbFromDB(attachmentId).catch(() => { /* best-effort */ });
         } catch (e) {
             const st = (e as {status?: number})?.status;
             toast.error(st === 409 ? t("chat.msgFrozen") : t("chat.msgDeleteError"));

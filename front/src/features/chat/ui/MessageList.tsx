@@ -51,7 +51,7 @@ export function MessageList({
     onJumpToBottom: () => void;
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
     onDownloadAttachment?: (attachmentId: string) => void;
-    onDeleteMessage?: (id: string) => void;
+    onDeleteMessage?: (id: string, attachmentId?: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;
 }) {

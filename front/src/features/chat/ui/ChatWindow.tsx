@@ -31,7 +31,7 @@ interface ChatWindowProps {
     blocked?: boolean;
     blockedByMe?: boolean;
     blockedByPeer?: boolean;
-    onDeleteMessage?: (id: string) => void;
+    onDeleteMessage?: (id: string, attachmentId?: string) => void;
     onSendAttachment?: (file: File) => void;
     uploadProgress?: number | null;
     onDownloadAttachment?: (attachmentId: string) => void;

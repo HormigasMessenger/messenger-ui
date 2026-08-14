@@ -41,7 +41,7 @@ export function MessageBubble({
     authorName?: string;    // resolved display name of msg.from, for a peer's bubble in a group
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
     onDownloadAttachment?: (attachmentId: string) => void;
-    onDeleteMessage?: (id: string) => void;
+    onDeleteMessage?: (id: string, attachmentId?: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;
 }) {
@@ -134,7 +134,7 @@ export function MessageBubble({
                 A pending/sending/failed one is discarded from the queue via the status block above. */}
             {onDeleteMessage && msg.fromMe && !status && (
                 <button
-                    onClick={() => onDeleteMessage(msg.id)}
+                    onClick={() => onDeleteMessage(msg.id, msg.meta?.attachmentId)}
                     title={t("chat.deleteMessage")}
                     aria-label={t("chat.deleteMessage")}
                     className="ml-2 text-[10px] opacity-40 hover:opacity-100"

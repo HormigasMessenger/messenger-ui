@@ -107,13 +107,16 @@ export function AttachmentImage({
     );
     if (!displayUrl) return <span className="opacity-60 text-xs">🖼 cargando…</span>;
     return (
-        <button onClick={openFull} title={fileName} className="block">
+        // inline-block + a BLOCK img so the button box hugs the image exactly (an inline img sits on the
+        // text baseline, leaving the button taller than the picture → only a corner was clickable).
+        <button onClick={openFull} title={fileName}
+                className="inline-block align-top p-0 border-0 bg-transparent cursor-pointer">
             <img
                 src={displayUrl}
                 alt={fileName}
                 onLoad={onImgLoad}
                 onError={() => setFailed(true)}
-                className="max-w-[200px] max-h-[200px] rounded-md object-cover"
+                className="block max-w-[200px] max-h-[200px] rounded-md"
             />
         </button>
     );
