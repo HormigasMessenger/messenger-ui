@@ -58,11 +58,7 @@ export default function AddContactPage() {
     }, [query]);
 
     useEffect(() => {
-        if (debounced.length < MIN_CHARS) {
-            setItems([]);
-            setNextToken(undefined);
-            return;
-        }
+        if (debounced.length < MIN_CHARS) return; // too short → show nothing (derived below), don't fetch
         let cancelled = false;
         runSearch({q: debounced})
             .unwrap()
@@ -74,6 +70,13 @@ export default function AddContactPage() {
             .catch(() => { /* isError surfaces it */ });
         return () => { cancelled = true; };
     }, [debounced, myId, runSearch]);
+
+    // Short query → show nothing (derived, so the effect never has to synchronously clear state on a
+    // keystroke). Stale results from a prior longer query stay in `items` but are hidden until the next
+    // search overwrites them.
+    const showResults = debounced.length >= MIN_CHARS;
+    const visibleItems = showResults ? items : [];
+    const visibleNextToken = showResults ? nextToken : undefined;
 
     async function loadMore() {
         if (!nextToken) return;
@@ -158,10 +161,10 @@ export default function AddContactPage() {
                     {debounced.length >= MIN_CHARS && isError && (
                         <p className="text-sm text-red-600 text-center py-4">{t("addUser.searchError")}</p>
                     )}
-                    {debounced.length >= MIN_CHARS && !isError && !isFetching && items.length === 0 && (
+                    {showResults && !isError && !isFetching && visibleItems.length === 0 && (
                         <p className="text-sm text-gray-500 text-center py-4">{t("addUser.noResults")}</p>
                     )}
-                    {items.map((u) => {
+                    {visibleItems.map((u) => {
                         const name = idsDisplayName(u);
                         return (
                             <button
@@ -188,7 +191,7 @@ export default function AddContactPage() {
                         );
                     })}
                     {isFetching && <p className="text-sm text-gray-500 text-center py-2">{t("addUser.searching")}</p>}
-                    {nextToken && !isFetching && (
+                    {visibleNextToken && !isFetching && (
                         <button
                             type="button"
                             onClick={loadMore}

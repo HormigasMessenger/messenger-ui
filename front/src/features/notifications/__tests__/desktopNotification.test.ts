@@ -12,7 +12,7 @@ function stubNotification(permission: string) {
 }
 
 function stubServiceWorker(active: {postMessage: (m: unknown) => void} | null) {
-    const reg = {active, showNotification: vi.fn((..._a: unknown[]) => Promise.resolve())};
+    const reg = {active, showNotification: vi.fn(() => Promise.resolve())};
     Object.defineProperty(navigator, "serviceWorker", {
         configurable: true,
         value: {ready: Promise.resolve(reg)},

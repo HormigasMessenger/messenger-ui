@@ -108,6 +108,14 @@ function ChatWindow({
     const pendingBottomRef = useRef(true);
     const [unseenBelow, setUnseenBelow] = useState(0);
 
+    // Reset the "↓ N new" counter when the open chat changes — during render (React's adjust-state-on-
+    // change), not in the open-chat effect below, so it can't cascade an extra render.
+    const [prevChatId, setPrevChatId] = useState(selectedChatId);
+    if (selectedChatId !== prevChatId) {
+        setPrevChatId(selectedChatId);
+        setUnseenBelow(0);
+    }
+
     const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
         bottomRef.current?.scrollIntoView({behavior});
         atBottomRef.current = true;
@@ -140,7 +148,6 @@ function ChatWindow({
     // BEFORE the landing effect below, so pendingBottomRef is set before that effect reads it.
     useLayoutEffect(() => {
         atBottomRef.current = true;
-        setUnseenBelow(0);
         pendingBottomRef.current = true;
         if (typeof window !== "undefined" && window.matchMedia?.("(min-width: 640px)").matches) {
             inputRef.current?.focus();
