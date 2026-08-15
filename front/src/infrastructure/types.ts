@@ -1,5 +1,3 @@
-import type {IncomingWebRTCMessage} from "@/features/call/model/types.ts";
-
 type WSStatus = "disconnected" | "connecting" | "connected"
 
 export type WSMessage = {
@@ -7,6 +5,22 @@ export type WSMessage = {
     [key: string]: unknown;
 }
 export type WSDispatcher = (data: WSMessage) => void;
+
+// WebRTC signalling wire types live HERE (the WS boundary), not in features/call — infrastructure is a
+// lower layer and must not import UP into a feature. features/call re-exports these downward.
+export type CallMedia = "audio" | "video";
+
+export type IncomingWebRTCMessage =
+    | WSMessage & { type: "call:offer"; from: string; offer: RTCSessionDescriptionInit; media?: CallMedia }
+    | WSMessage & { type: "call:answer"; from: string; answer: RTCSessionDescriptionInit }
+    | WSMessage & { type: "call:ice"; from: string; candidate: RTCIceCandidateInit }
+    | WSMessage & { type: "call:end"; from: string };
+
+export type OutgoingWebRTCMessage =
+    | { type: "call:offer"; to: string; offer: RTCSessionDescriptionInit; media?: CallMedia }
+    | { type: "call:answer"; to: string; answer: RTCSessionDescriptionInit }
+    | { type: "call:ice"; to: string; candidate: RTCIceCandidateInit }
+    | { type: "call:end"; to: string };
 
 export type WebSocketState = {
     status: WSStatus;
