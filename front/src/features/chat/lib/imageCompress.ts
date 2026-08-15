@@ -22,6 +22,29 @@ export function targetDimensions(width: number, height: number, maxDimension: nu
 }
 
 /**
+ * Downscale an already-fetched image Blob to a small WebP thumbnail (for the attachment cache). Operates
+ * on bytes we own — createImageBitmap + canvas — so there's no cross-origin/taint concern (unlike reading
+ * back a displayed <img>). Returns the original blob on any failure (still cacheable, just larger).
+ */
+export async function blobToThumb(blob: Blob, maxDimension: number, quality: number): Promise<Blob> {
+    try {
+        const bitmap = await createImageBitmap(blob);
+        const {width, height} = targetDimensions(bitmap.width, bitmap.height, maxDimension);
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { bitmap.close?.(); return blob; }
+        ctx.drawImage(bitmap, 0, 0, width, height);
+        bitmap.close?.();
+        return await new Promise<Blob>((resolve) =>
+            canvas.toBlob((b) => resolve(b || blob), "image/webp", quality));
+    } catch {
+        return blob;
+    }
+}
+
+/**
  * Downscale an image proportionally to `maxDimension` and re-encode it as WebP at `quality`, entirely
  * client-side (before the presigned upload). Decode + resize run natively (createImageBitmap + a 2D
  * canvas); the WebP encode uses jSquash (lazy-loaded WASM, mozjpeg-grade) and falls back to the native

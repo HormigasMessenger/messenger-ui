@@ -1,6 +1,10 @@
 import {type IDBPDatabase, openDB} from 'idb';
-import {DB_NAME, DB_VERSION, HISTORY_STORE_NAME, STORE_KEY, STORE_NAME, THUMB_STORE_NAME, THUMB_META_STORE, THUMB_LRU_KEY} from "@/shared/config/idb";
-import {THUMB_CACHE_MAX} from "@/shared/config/chat.ts";
+import {
+    DB_NAME, DB_VERSION, HISTORY_STORE_NAME, STORE_KEY, STORE_NAME,
+    ATTACHMENT_BLOB_STORE, ATTACHMENT_INDEX_STORE, ATTACHMENT_INDEX_KEY,
+    THUMB_STORE_NAME, THUMB_META_STORE,
+} from "@/shared/config/idb";
+import {ATTACHMENT_CACHE_MAX_BYTES} from "@/shared/config/chat.ts";
 import type {OutboxState} from "@/features/chat/model/types";
 import type {ChatMessage} from "@/features/chat/model/schema/domainChatMessage.schema";
 
@@ -20,13 +24,15 @@ export const initDB = async () => {
                 if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
                     db.createObjectStore(HISTORY_STORE_NAME);
                 }
-                // v3: attachment thumbnail cache, keyed by attachmentId (value = small WebP Blob).
-                if (!db.objectStoreNames.contains(THUMB_STORE_NAME)) {
-                    db.createObjectStore(THUMB_STORE_NAME);
+                // v5: unified, size-bounded media-attachment cache (images/audio/video) + its index.
+                // Replaces the v3/v4 thumbnail-only stores, dropped here (just a cache — safe to lose).
+                if (db.objectStoreNames.contains(THUMB_STORE_NAME)) db.deleteObjectStore(THUMB_STORE_NAME);
+                if (db.objectStoreNames.contains(THUMB_META_STORE)) db.deleteObjectStore(THUMB_META_STORE);
+                if (!db.objectStoreNames.contains(ATTACHMENT_BLOB_STORE)) {
+                    db.createObjectStore(ATTACHMENT_BLOB_STORE);
                 }
-                // v4: companion store for the thumbnail insertion order (drives the FIFO cap).
-                if (!db.objectStoreNames.contains(THUMB_META_STORE)) {
-                    db.createObjectStore(THUMB_META_STORE);
+                if (!db.objectStoreNames.contains(ATTACHMENT_INDEX_STORE)) {
+                    db.createObjectStore(ATTACHMENT_INDEX_STORE);
                 }
             },
         });
@@ -59,50 +65,69 @@ export async function loadHistoryFromDB(chatId: string): Promise<ChatMessage[] |
     return (result as ChatMessage[]) ?? null;
 }
 
-// --- attachment thumbnail cache -----------------------------------------------------
-// Best-effort FIFO cache: a companion order array (THUMB_META_STORE[THUMB_LRU_KEY]) records insertion
-// order so saveThumbToDB can evict the oldest once the count passes THUMB_CACHE_MAX. The blob write and
-// the order update aren't in one transaction — a rare concurrent save may skip an eviction, which is
-// harmless for a cache (the cap stays approximate, never a correctness issue).
-export async function saveThumbToDB(attachmentId: string, blob: Blob) {
-    if (!attachmentId || !blob) return;
-    const db = await initDB();
-    await db.put(THUMB_STORE_NAME, blob, attachmentId);
-    const order = ((await db.get(THUMB_META_STORE, THUMB_LRU_KEY)) as string[] | undefined) ?? [];
-    const next = order.filter((id) => id !== attachmentId);
-    next.push(attachmentId);
-    while (next.length > THUMB_CACHE_MAX) {
-        const evicted = next.shift();
-        if (evicted) await db.delete(THUMB_STORE_NAME, evicted);
+// --- unified media-attachment cache (images / voice notes / video) ------------------
+// Size-bounded, oldest-first eviction. The index (ATTACHMENT_INDEX_STORE[ATTACHMENT_INDEX_KEY]) is one
+// array of {id,size} in insertion order, so the total byte size and the eviction victims are known
+// without reading any blob. The blob write and the index update aren't a single transaction — a rare
+// concurrent save may over/under-count momentarily, which is harmless for a cache (never a correctness
+// issue; the cap stays approximate). The newest entry is always kept even if it alone exceeds the budget.
+export type CacheIndexEntry = {id: string; size: number};
+
+/**
+ * Pure oldest-first eviction: given the insertion-ordered index and a byte budget, return the entries to
+ * keep and the ids to evict so the total fits. The newest entry (last) is always kept even if it alone
+ * exceeds the budget. Exported for unit testing (IndexedDB isn't available in jsdom).
+ */
+export function evictToFit(entries: CacheIndexEntry[], maxBytes: number): {kept: CacheIndexEntry[]; evicted: string[]} {
+    const kept = [...entries];
+    const evicted: string[] = [];
+    let total = kept.reduce((sum, e) => sum + e.size, 0);
+    while (total > maxBytes && kept.length > 1) {
+        const e = kept.shift();
+        if (e) { evicted.push(e.id); total -= e.size; }
     }
-    await db.put(THUMB_META_STORE, next, THUMB_LRU_KEY);
+    return {kept, evicted};
 }
 
-export async function loadThumbFromDB(attachmentId: string): Promise<Blob | null> {
+async function readCacheIndex(db: IDBPDatabase<unknown>): Promise<CacheIndexEntry[]> {
+    return ((await db.get(ATTACHMENT_INDEX_STORE, ATTACHMENT_INDEX_KEY)) as CacheIndexEntry[] | undefined) ?? [];
+}
+
+export async function saveAttachmentBlob(attachmentId: string, blob: Blob) {
+    if (!attachmentId || !blob) return;
+    const db = await initDB();
+    await db.put(ATTACHMENT_BLOB_STORE, blob, attachmentId);
+    const index = await readCacheIndex(db);
+    const next = [...index.filter((e) => e.id !== attachmentId), {id: attachmentId, size: blob.size || 0}];
+    const {kept, evicted} = evictToFit(next, ATTACHMENT_CACHE_MAX_BYTES);
+    for (const id of evicted) await db.delete(ATTACHMENT_BLOB_STORE, id);
+    await db.put(ATTACHMENT_INDEX_STORE, kept, ATTACHMENT_INDEX_KEY);
+}
+
+export async function loadAttachmentBlob(attachmentId: string): Promise<Blob | null> {
     if (!attachmentId) return null;
     const db = await initDB();
-    const result = await db.get(THUMB_STORE_NAME, attachmentId);
+    const result = await db.get(ATTACHMENT_BLOB_STORE, attachmentId);
     return (result as Blob) ?? null;
 }
 
-// Drop a single cached thumbnail (its message/attachment was deleted) — blob + its order entry.
-export async function deleteThumbFromDB(attachmentId: string) {
+// Drop one cached attachment (its message was deleted, or the blob was stale/corrupt) — blob + index.
+export async function deleteAttachmentBlob(attachmentId: string) {
     if (!attachmentId) return;
     const db = await initDB();
-    await db.delete(THUMB_STORE_NAME, attachmentId);
-    const order = (await db.get(THUMB_META_STORE, THUMB_LRU_KEY)) as string[] | undefined;
-    if (order?.includes(attachmentId)) {
-        await db.put(THUMB_META_STORE, order.filter((id) => id !== attachmentId), THUMB_LRU_KEY);
+    await db.delete(ATTACHMENT_BLOB_STORE, attachmentId);
+    const index = await readCacheIndex(db);
+    if (index.some((e) => e.id === attachmentId)) {
+        await db.put(ATTACHMENT_INDEX_STORE, index.filter((e) => e.id !== attachmentId), ATTACHMENT_INDEX_KEY);
     }
 }
 
-// Wipe all locally-cached user data (outbox queue + per-conversation history + attachment thumbnails).
-// Called on logout so one user's queued messages, plaintext history and images never linger on the
-// device for the next user.
+// Wipe all locally-cached user data (outbox queue + per-conversation history + media cache). Called on
+// logout so one user's queued messages, plaintext history and media never linger for the next user.
 export async function clearAllLocalData() {
     const db = await initDB();
     await Promise.all([
         db.clear(STORE_NAME), db.clear(HISTORY_STORE_NAME),
-        db.clear(THUMB_STORE_NAME), db.clear(THUMB_META_STORE),
+        db.clear(ATTACHMENT_BLOB_STORE), db.clear(ATTACHMENT_INDEX_STORE),
     ]);
 }

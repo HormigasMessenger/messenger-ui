@@ -1,16 +1,15 @@
-import {useEffect, useRef, useState, type SyntheticEvent} from "react";
+import {useRef, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
+import {useAttachmentObjectUrl} from "@/features/chat/lib/useAttachmentObjectUrl.ts";
+import {loadAttachmentBlob, saveAttachmentBlob, deleteAttachmentBlob} from "@/features/chat/db/db.ts";
 
 /**
- * Inline player for an audio attachment (voice message).
- *
- * The audio bytes are FETCHED into a Blob and played from a local `blob:` URL rather than streamed via
- * `<audio src={presignedUrl}>`. MediaRecorder's webm/opus has no Duration/Cues in its header, so a
- * streaming `<audio>` element hangs on an endless spinner trying to read metadata over a range-served
- * URL. A fully-downloaded blob is complete and seekable, so it just plays. (Attachment URLs are
- * same-origin/edge-fronted, so `fetch()` needs no CORS.)
- *
- * The presigned resolve is retried with backoff (a just-uploaded object's GET can 404 the first time).
+ * Inline player for an audio attachment (voice message). Uses the shared useAttachmentObjectUrl layer:
+ * the bytes are fetched into a Blob and played from a local `blob:` URL — never streamed from the
+ * presigned URL. That both (a) avoids the endless spinner (MediaRecorder webm has no Duration/Cues in its
+ * header, so a streaming <audio> hangs reading metadata over a range-served URL) and (b) makes a presigned
+ * URL expiring irrelevant once fetched. The blob is persisted in the shared size-bounded media cache, so
+ * re-opening a chat replays voice notes instantly (and offline) instead of re-downloading.
  */
 export function AttachmentAudio({
     attachmentId,
@@ -22,53 +21,11 @@ export function AttachmentAudio({
     resolveUrl?: (attachmentId: string) => Promise<string | null>;
 }) {
     const {t} = useTranslation();
-    const [url, setUrl] = useState<string | null>(null); // a blob: URL
-    const [failed, setFailed] = useState(false);
-    const [attempt, setAttempt] = useState(0); // bumped by the manual retry to re-run the effect
-    const durationFixed = useRef(false);       // arm the duration hack at most once per element
-
-    // Reset on attachment change during render (not in the effect) so the effect only loads.
-    const [prevId, setPrevId] = useState(attachmentId);
-    if (attachmentId !== prevId) { setPrevId(attachmentId); setUrl(null); setFailed(false); }
-
-    useEffect(() => {
-        let alive = true;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        let objectUrl: string | null = null;
-        const abort = new AbortController();
-        let tries = 0;
-        const MAX = 4;
-
-        const fail = () => { if (++tries < MAX) timer = setTimeout(go, 800 * tries); else setFailed(true); };
-        function go() {
-            resolveUrl?.(attachmentId)
-                .then(async (presigned) => {
-                    if (!alive) return;
-                    if (!presigned) { fail(); return; }
-                    try {
-                        const resp = await fetch(presigned, {signal: abort.signal});
-                        if (!resp.ok) throw new Error("download " + resp.status);
-                        const blob = await resp.blob();
-                        if (!alive) return;
-                        objectUrl = URL.createObjectURL(blob);
-                        setUrl(objectUrl);
-                    } catch {
-                        if (alive) fail(); // AbortError also lands here but `alive` is false by then → no-op
-                    }
-                })
-                .catch(() => { if (alive) fail(); });
-        }
-        go();
-
-        return () => {
-            alive = false;
-            abort.abort();
-            if (timer) clearTimeout(timer);
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [attachmentId, attempt, resolveUrl]);
-
-    const retry = () => { setFailed(false); setUrl(null); setAttempt((a) => a + 1); };
+    const {url, failed, retry} = useAttachmentObjectUrl({
+        attachmentId, resolveUrl,
+        load: loadAttachmentBlob, save: saveAttachmentBlob, invalidate: deleteAttachmentBlob,
+    });
+    const durationFixed = useRef(false);
 
     // MediaRecorder webm has no Duration in its header → the <audio> reports duration=Infinity and the
     // seek bar / total time are broken. Force a real duration: seek to the end once (the blob is local
@@ -91,7 +48,7 @@ export function AttachmentAudio({
     );
     if (!url) return <span className="opacity-60 text-xs">🎙 {t("chat.voiceMessage")}…</span>;
     return (
-        <audio controls src={url} onLoadedMetadata={onLoadedMetadata} onError={() => setFailed(true)}
+        <audio controls src={url} onLoadedMetadata={onLoadedMetadata} onError={retry}
                className="max-w-[240px] h-9" title={fileName}>
             <a href={url} target="_blank" rel="noopener">🎙 {t("chat.voiceMessage")}</a>
         </audio>

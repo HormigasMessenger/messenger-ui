@@ -26,10 +26,10 @@ export const IMAGE_COMPRESS_MIN_BYTES = 150 * 1024; // don't bother compressing 
 // covers 1x/2x crisply while staying tiny.
 export const THUMB_MAX_DIMENSION = 320;
 export const THUMB_QUALITY = 0.6;
-// Cap the number of cached thumbnails (FIFO by generation — oldest evicted first). Each thumb is a
-// ~320px WebP (~5–25 KB), so 500 bounds the cache to roughly 3–12 MB. The browser can also evict the
-// whole origin under storage pressure; either way a miss just re-resolves + re-generates (no data loss).
-export const THUMB_CACHE_MAX = 500;
+// Total byte budget for the on-device media cache (image thumbnails + voice notes + video), shared
+// across all attachments. On save, oldest entries are evicted until the total fits. Configurable; the
+// browser can also evict the whole origin under storage pressure — either way a miss just re-fetches.
+export const ATTACHMENT_CACHE_MAX_BYTES = 80 * 1024 * 1024; // 80 MB
 
 // Voice messages: max recording length before auto-send (guards a runaway recording / huge upload).
 export const VOICE_MAX_DURATION_MS = 3 * 60 * 1000; // 3 minutes

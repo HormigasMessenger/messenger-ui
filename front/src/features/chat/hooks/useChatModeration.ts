@@ -4,7 +4,7 @@ import {useTranslation} from "react-i18next";
 
 import {isUlid} from "@/shared/ulid/ulid.ts";
 import {useBlockChatMutation, useUnblockChatMutation, useDeleteMessageMutation} from "@/features/chat/rest/chatApi.ts";
-import {deleteThumbFromDB} from "@/features/chat/db/db.ts";
+import {deleteAttachmentBlob} from "@/features/chat/db/db.ts";
 
 type BlockSummary = {blocked?: boolean; blockedByMe?: boolean; blockedByPeer?: boolean} | null | undefined;
 
@@ -54,8 +54,8 @@ export function useChatModeration(params: {
                 backendId: server ? messageId : undefined,
                 clientMessageId: server ? undefined : messageId,
             }).unwrap();
-            // Deleted an image → drop its cached thumbnail too (no orphan lingering until logout).
-            if (attachmentId) deleteThumbFromDB(attachmentId).catch(() => { /* best-effort */ });
+            // Deleted a media message → drop its cached blob too (no orphan lingering until logout).
+            if (attachmentId) deleteAttachmentBlob(attachmentId).catch(() => { /* best-effort */ });
         } catch (e) {
             const st = (e as {status?: number})?.status;
             toast.error(st === 409 ? t("chat.msgFrozen") : t("chat.msgDeleteError"));
