@@ -104,14 +104,17 @@ export class WebRTCService {
     private async init() {
         if (this.pc) return;
 
-        const pc = new RTCPeerConnection(ICE_SERVERS);
-        this.pc = pc;
-
+        // Acquire the mic/camera FIRST. If getUserMedia throws (permission denied, or the device is
+        // momentarily busy right after recording/playing a voice note), no half-open pc is left set —
+        // otherwise `this.pc` would stay non-null and every later call would silently no-op
+        // (`if (this.pc) return`) until a page reload.
         const stream = await navigator.mediaDevices.getUserMedia({
             video: !this.audioOnly,
             audio: true,
         });
 
+        const pc = new RTCPeerConnection(ICE_SERVERS);
+        this.pc = pc;
         this.localStream = stream;
         this.onLocalStreamChange?.(stream);
 

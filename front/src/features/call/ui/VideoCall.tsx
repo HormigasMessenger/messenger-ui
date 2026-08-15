@@ -36,9 +36,14 @@ export default function VideoCall({
 
     useEffect(() => {
         // Attach the remote stream to whichever element is mounted for the current mode (video panel
-        // for a video call, hidden audio element for a voice call) so the remote sound always plays.
+        // for a video call, hidden audio element for a voice call) and explicitly start playback — the
+        // stream arrives async (after the click that started the call), so the element doesn't always
+        // autoplay on its own, which is heard as "no sound on the call".
         const el = audioOnly ? remoteAudioRef.current : remoteVideoRef.current;
-        if (el && remoteStream) el.srcObject = remoteStream;
+        if (el && remoteStream) {
+            el.srcObject = remoteStream;
+            void el.play?.().catch(() => { /* autoplay policy may defer until a user gesture */ });
+        }
     }, [remoteStream, audioOnly]);
 
     const callFrom = useSelector((state: RootState) => state.call.peerId);

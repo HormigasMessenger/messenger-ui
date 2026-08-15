@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useEffect, useState, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
 
 /**
@@ -67,6 +67,18 @@ export function AttachmentAudio({
 
     const retry = () => { setFailed(false); setUrl(null); setAttempt((a) => a + 1); };
 
+    // MediaRecorder webm has no Duration in its header → the <audio> reports duration=Infinity and the
+    // seek bar / total time are broken. Force a real duration: seek to the end once (the blob is local
+    // and complete, so this resolves instantly), then snap back to the start.
+    const onLoadedMetadata = (e: SyntheticEvent<HTMLAudioElement>) => {
+        const a = e.currentTarget;
+        if (a.duration === Infinity || Number.isNaN(a.duration)) {
+            const onTimeUpdate = () => { a.removeEventListener("timeupdate", onTimeUpdate); a.currentTime = 0; };
+            a.addEventListener("timeupdate", onTimeUpdate);
+            a.currentTime = 1e101;
+        }
+    };
+
     if (failed) return (
         <button onClick={retry} className="break-all underline decoration-dotted" title={fileName}>
             🎙 {t("chat.voiceMessage")} — ↻
@@ -74,7 +86,7 @@ export function AttachmentAudio({
     );
     if (!url) return <span className="opacity-60 text-xs">🎙 {t("chat.voiceMessage")}…</span>;
     return (
-        <audio controls src={url} className="max-w-[240px] h-9" title={fileName}>
+        <audio controls src={url} onLoadedMetadata={onLoadedMetadata} className="max-w-[240px] h-9" title={fileName}>
             <a href={url} target="_blank" rel="noopener">🎙 {t("chat.voiceMessage")}</a>
         </audio>
     );
