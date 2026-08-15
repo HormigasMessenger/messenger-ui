@@ -122,12 +122,15 @@ async function showChatNotification(payload) {
         icon: SCOPE_PATH + "pwa-192x192.png",
         badge: SCOPE_PATH + "pwa-192x192.png",
         tag,               // one notification per conversation (calls: per conversation, distinct)
-        renotify: true,
+        renotify: true,    // re-alert (sound + vibrate) on each new one even when the tag already exists
+        silent: false,     // explicitly NOT silent — let the OS play its notification sound
         data,
-        // Call: keep it up until acted on, vibrate, and offer an explicit action. The button's
-        // action id is read in notificationclick to route to the answer/call-back flow.
+        // Vibrate for BOTH messages and calls (a message push was silent + easy to miss — "quiet and
+        // plain"); a call gets a longer, more insistent pattern. Sound is the OS channel's default.
+        vibrate: isCall ? [200, 100, 200, 100, 200] : [180, 80, 180],
+        // Call: keep it up until acted on and offer an explicit Answer action (its id is read in
+        // notificationclick to route to the answer/call-back flow).
         requireInteraction: isCall,
-        vibrate: isCall ? [200, 100, 200, 100, 200] : undefined,
         actions: isCall ? [{ action: "answer", title: "Answer" }] : undefined,
     };
     // Belt-and-suspenders: also close any existing same-tag notification so a lingering prior one for
