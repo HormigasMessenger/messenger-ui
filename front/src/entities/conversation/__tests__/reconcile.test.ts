@@ -1,5 +1,5 @@
 import {describe, it, expect} from "vitest";
-import {toChatSummary, type RawConversation} from "../reconcileChats.ts";
+import {toChatSummary, type RawConversation} from "../reconcile.ts";
 
 const direct = (over: Partial<RawConversation> = {}): RawConversation => ({
     id: "c1", clientId: "client", masterId: "master", metadata: {}, ...over,

@@ -6,7 +6,7 @@ import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
 import {useGetGroupsQuery} from "@/features/groups";
-import {toGroupSummary} from "@/features/chat/model/reconcileChats.ts";
+import {toGroupSummary} from "@/entities/conversation";
 import {useMemo} from "react";
 import {useTranslation} from "react-i18next";
 

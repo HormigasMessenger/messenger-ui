@@ -1,4 +1,8 @@
-import type {ChatSummary} from "@/entities/conversation";
+import type {ChatSummary} from "./model.ts";
+
+// Mappers from raw backend conversation/group rows to the caller-relative ChatSummary entity. These
+// live in the conversation ENTITY (not features/chat) so both the chat and contacts features consume
+// them DOWNWARD — previously they sat in features/chat and contacts reached sideways into them.
 
 /** A row of GET /api/groups (the group list is its own resource, separate from DIRECT /api/chats). */
 export type RawGroupListItem = {id: string; name?: string; memberCount?: number; updatedAt?: string | null};
