@@ -6,6 +6,7 @@ import {useTranslation} from "react-i18next";
 import type {AppDispatch} from "@/store/store";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
 import {buildTypingIn} from "@/features/chat/model/schema/wireMessage.schema.ts";
+import {loadDraft, saveDraft, clearDraft} from "@/features/chat/model/drafts.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
 type ComposerSummary = {counterpartId: string; orderId?: string} | null | undefined;
@@ -24,7 +25,22 @@ export function useMessageComposer(params: {
     const {selectedChatId, myId, getSummary} = params;
     const dispatch = useDispatch<AppDispatch>();
     const {t} = useTranslation();
-    const [messageInput, setMessageInput] = useState("");
+    // Seed from the persisted draft for the initially-selected chat (e.g. a deep-link open).
+    const [messageInput, setMessageInputRaw] = useState(() => selectedChatId ? loadDraft(selectedChatId) : "");
+
+    // Restore the per-chat draft when the open chat changes — during render (adjust-state-on-change),
+    // not an effect. A single messageInput used to leak one chat's unsent text into the next chat.
+    const [draftChat, setDraftChat] = useState(selectedChatId);
+    if (selectedChatId !== draftChat) {
+        setDraftChat(selectedChatId);
+        setMessageInputRaw(selectedChatId ? loadDraft(selectedChatId) : "");
+    }
+
+    // Public setter also persists the draft under the CURRENT chat (so switching chats can't misfile it).
+    const setMessageInput = useCallback((text: string) => {
+        setMessageInputRaw(text);
+        if (selectedChatId) saveDraft(selectedChatId, text);
+    }, [selectedChatId]);
 
     const sendMessage = useCallback((text: string) => {
         if (!selectedChatId || !text.trim()) return;
@@ -36,7 +52,8 @@ export function useMessageComposer(params: {
             toast.error(t("chat.msgSendError", {defaultValue: "Couldn't send — reopen the chat"}));
             return;
         }
-        setMessageInput("");
+        setMessageInputRaw("");
+        clearDraft(selectedChatId);
         chatMessagesService.enqueueChatMessage(
             dispatch, text, myId, selectedChatId, summary.counterpartId, summary.orderId
         );

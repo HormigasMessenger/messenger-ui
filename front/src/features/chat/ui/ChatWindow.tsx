@@ -127,6 +127,9 @@ function ChatWindow({
         const el = listRef.current;
         const atBottom = el ? el.scrollHeight - el.scrollTop - el.clientHeight < 120 : true;
         atBottomRef.current = atBottom;
+        // A genuine user scroll away from the bottom ends the "landing" state, so late-loading
+        // attachments (images fetch→blob, video posters) stop re-pinning the view for them.
+        if (!atBottom) pendingBottomRef.current = false;
         if (atBottom && unseenBelow) setUnseenBelow(0);
     };
 
@@ -166,7 +169,10 @@ function ChatWindow({
         if (!el) return;
         el.scrollTop = el.scrollHeight;
         atBottomRef.current = true;
-        pendingBottomRef.current = false;
+        // NOTE: pendingBottomRef stays TRUE until the user scrolls up (see onListScroll). Attachments
+        // (images fetch→blob, video posters) gain height AFTER this first landing, and the ResizeObserver
+        // below re-pins to bottom while pendingBottomRef holds — so a chat with media still opens at the
+        // newest message instead of stranding mid-list once the media finishes loading.
         requestAnimationFrame(() => {
             const e2 = listRef.current;
             if (e2 && atBottomRef.current) e2.scrollTop = e2.scrollHeight;

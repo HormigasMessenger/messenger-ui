@@ -9,6 +9,7 @@ import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import {contactsApi} from "@/features/contacts/rest/contactsApi.ts";
 import {idsApi} from "@/features/directory/idsApi.ts";
 import {clearAllLocalData} from "@/features/chat/db/db.ts";
+import {clearAllDrafts} from "@/features/chat/model/drafts.ts";
 import {removePushSubscription} from "@/features/notifications";
 
 
@@ -27,6 +28,7 @@ export default function LogoutPage() {
         dispatch(contactsApi.util.resetApiState());
         dispatch(idsApi.util.resetApiState());
         clearAllLocalData().catch(() => { /* best-effort wipe */ });
+        clearAllDrafts(); // the previous user's unsent drafts must not linger for the next one
     }
 
     const handleLogout = async () => {
