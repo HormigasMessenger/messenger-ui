@@ -130,6 +130,7 @@
     "callingYou": "Te está llamando {{name}}",
     "calling": "Llamando a {{name}}…",
     "connecting": "Conectando…",
+    "startFailed": "No se pudo iniciar la llamada",
     "noAnswer": "Sin respuesta",
     "noConversation": "No se puede llamar — abre primero un chat con este contacto",
     "accept": "Aceptar",

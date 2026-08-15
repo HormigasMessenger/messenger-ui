@@ -47,6 +47,8 @@ export function useVoiceRecorder() {
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const startedAtRef = useRef(0);
     const resolveRef = useRef<((f: File | null) => void) | null>(null);
+    const startingRef = useRef(false); // synchronous re-entrancy guard: getUserMedia is async, recRef is
+                                       // set only after it resolves, so two fast taps could both start.
 
     const releaseStream = () => {
         streamRef.current?.getTracks().forEach((tr) => tr.stop());
@@ -58,10 +60,11 @@ export function useVoiceRecorder() {
     };
 
     const start = useCallback(async (): Promise<boolean> => {
-        if (recRef.current || typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+        if (recRef.current || startingRef.current || typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
             if (typeof MediaRecorder === "undefined") toast.error(t("chat.micError"));
             return false;
         }
+        startingRef.current = true;
         try {
             const stream = await navigator.mediaDevices.getUserMedia({audio: true});
             streamRef.current = stream;
@@ -99,6 +102,8 @@ export function useVoiceRecorder() {
             recRef.current = null;
             setRecording(false);
             return false;
+        } finally {
+            startingRef.current = false;
         }
     }, [t]);
 

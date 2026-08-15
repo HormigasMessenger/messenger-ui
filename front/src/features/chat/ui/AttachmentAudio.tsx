@@ -1,4 +1,4 @@
-import {useEffect, useState, type SyntheticEvent} from "react";
+import {useEffect, useRef, useState, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
 
 /**
@@ -25,6 +25,7 @@ export function AttachmentAudio({
     const [url, setUrl] = useState<string | null>(null); // a blob: URL
     const [failed, setFailed] = useState(false);
     const [attempt, setAttempt] = useState(0); // bumped by the manual retry to re-run the effect
+    const durationFixed = useRef(false);       // arm the duration hack at most once per element
 
     // Reset on attachment change during render (not in the effect) so the effect only loads.
     const [prevId, setPrevId] = useState(attachmentId);
@@ -34,6 +35,7 @@ export function AttachmentAudio({
         let alive = true;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let objectUrl: string | null = null;
+        const abort = new AbortController();
         let tries = 0;
         const MAX = 4;
 
@@ -44,14 +46,14 @@ export function AttachmentAudio({
                     if (!alive) return;
                     if (!presigned) { fail(); return; }
                     try {
-                        const resp = await fetch(presigned);
+                        const resp = await fetch(presigned, {signal: abort.signal});
                         if (!resp.ok) throw new Error("download " + resp.status);
                         const blob = await resp.blob();
                         if (!alive) return;
                         objectUrl = URL.createObjectURL(blob);
                         setUrl(objectUrl);
                     } catch {
-                        if (alive) fail();
+                        if (alive) fail(); // AbortError also lands here but `alive` is false by then → no-op
                     }
                 })
                 .catch(() => { if (alive) fail(); });
@@ -60,6 +62,7 @@ export function AttachmentAudio({
 
         return () => {
             alive = false;
+            abort.abort();
             if (timer) clearTimeout(timer);
             if (objectUrl) URL.revokeObjectURL(objectUrl);
         };
@@ -72,7 +75,9 @@ export function AttachmentAudio({
     // and complete, so this resolves instantly), then snap back to the start.
     const onLoadedMetadata = (e: SyntheticEvent<HTMLAudioElement>) => {
         const a = e.currentTarget;
+        if (durationFixed.current) return;
         if (a.duration === Infinity || Number.isNaN(a.duration)) {
+            durationFixed.current = true;
             const onTimeUpdate = () => { a.removeEventListener("timeupdate", onTimeUpdate); a.currentTime = 0; };
             a.addEventListener("timeupdate", onTimeUpdate);
             a.currentTime = 1e101;
@@ -86,7 +91,8 @@ export function AttachmentAudio({
     );
     if (!url) return <span className="opacity-60 text-xs">🎙 {t("chat.voiceMessage")}…</span>;
     return (
-        <audio controls src={url} onLoadedMetadata={onLoadedMetadata} className="max-w-[240px] h-9" title={fileName}>
+        <audio controls src={url} onLoadedMetadata={onLoadedMetadata} onError={() => setFailed(true)}
+               className="max-w-[240px] h-9" title={fileName}>
             <a href={url} target="_blank" rel="noopener">🎙 {t("chat.voiceMessage")}</a>
         </audio>
     );

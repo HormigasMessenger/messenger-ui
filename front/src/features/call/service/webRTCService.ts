@@ -7,6 +7,7 @@ import type {
 } from "@/features/call/model/types.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import toast from "react-hot-toast";
+import i18n from "@/shared/i18n";
 
 export class WebRTCService {
     /* ======================
@@ -74,7 +75,7 @@ export class WebRTCService {
         toast.error(
             err instanceof DOMException
                 ? err.message
-                : "Cannot start video call"
+                : i18n.t("call.startFailed")
         );
 
         this.cleanup();
@@ -87,6 +88,7 @@ export class WebRTCService {
         this.remotePeerId = null;
         this.remoteReady = false;
         this.pendingIce = [];
+        this.audioOnly = false;
 
         this.pc?.close();
         this.pc = null;
