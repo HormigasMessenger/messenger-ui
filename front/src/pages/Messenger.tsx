@@ -12,6 +12,7 @@ import VideoCall from "@/features/call/ui/VideoCall.tsx";
 import {useChat} from "@/features/chat/hooks";
 import {useOutboxRetry} from "@/features/chat/hooks/useOutboxRetry.ts";
 import {useCallTimeout} from "@/features/call/hooks/useCallTimeout.ts";
+import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
@@ -27,6 +28,8 @@ export default function Messenger() {
     useOutboxRetry();
     // End an unanswered outgoing call after a timeout.
     useCallTimeout();
+    // Ring while a call is incoming/dialing.
+    useCallRingtone();
 
     /* ======================
        WebRTC service

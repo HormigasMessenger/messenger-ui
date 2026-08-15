@@ -39,3 +39,50 @@ export function playNotificationSound() {
         osc.stop(now + 0.24);
     } catch { /* ignore */ }
 }
+
+/**
+ * Resume the AudioContext from a user gesture. Browsers start it "suspended" and reject resume() unless
+ * it's called during a gesture, so notification/ring audio is silent until the user has interacted once.
+ * Wire this to a one-time pointerdown/keydown at app start (see App). Idempotent + best-effort.
+ */
+export function unlockAudio() {
+    const ac = audioCtx();
+    if (ac && ac.state === "suspended") ac.resume().catch(() => {});
+}
+
+// --- incoming/outgoing call ringtone (asset-free, looped) --------------------------------------------
+let ringTimer: ReturnType<typeof setInterval> | null = null;
+
+function ringBurst() {
+    const ac = audioCtx();
+    if (!ac) return;
+    if (ac.state === "suspended") ac.resume().catch(() => {});
+    const base = ac.currentTime;
+    // Two short beeps (classic "ring-ring").
+    for (const offset of [0, 0.45]) {
+        const t = base + offset;
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(480, t);
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
+        gain.gain.setValueAtTime(0.22, t + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.36);
+        osc.connect(gain).connect(ac.destination);
+        osc.start(t);
+        osc.stop(t + 0.38);
+    }
+}
+
+/** Start the looping ringtone (incoming call / outgoing ringback). No-op if already ringing. */
+export function startRinging() {
+    if (ringTimer) return;
+    ringBurst();
+    ringTimer = setInterval(ringBurst, 2600);
+}
+
+/** Stop the ringtone. */
+export function stopRinging() {
+    if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+}

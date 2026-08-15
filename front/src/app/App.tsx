@@ -12,6 +12,7 @@ import {isNotLogged} from "@/shared/utils/checks.ts";
 import {ErrorBoundary} from "@/shared/ui/ErrorBoundary.tsx";
 import {armNotificationPermissionOnGesture, requestNotificationPermission} from "@/features/notifications";
 import {ensurePushSubscription} from "@/features/notifications";
+import {unlockAudio} from "@/shared/sound/notify.ts";
 
 // Route-level code splitting: keep the initial bundle small (each screen loads on demand).
 const Messenger = lazy(() => import("@/pages/Messenger"));
@@ -34,6 +35,15 @@ function App() {
         dispatch(markInitialized());
         requestNotificationPermission();                                  // desktop: mount-time request is honored
         armNotificationPermissionOnGesture(() => { ensurePushSubscription(); }); // mobile: request on first tap, then subscribe
+        // Unlock WebAudio on the first user gesture — browsers keep the AudioContext suspended until
+        // then, so the new-message blip and the call ringtone are otherwise silent.
+        const unlock = () => unlockAudio();
+        window.addEventListener("pointerdown", unlock);
+        window.addEventListener("keydown", unlock);
+        return () => {
+            window.removeEventListener("pointerdown", unlock);
+            window.removeEventListener("keydown", unlock);
+        };
     }, [dispatch]);
 
     // (Re)register the push subscription whenever a user becomes logged in — NOT just on page load.
