@@ -33,3 +33,5 @@ export const ATTACHMENT_CACHE_MAX_BYTES = 80 * 1024 * 1024; // 80 MB
 
 // Voice messages: max recording length before auto-send (guards a runaway recording / huge upload).
 export const VOICE_MAX_DURATION_MS = 3 * 60 * 1000; // 3 minutes
+// Video messages: shorter cap — video is far heavier and bounded by the 25MB attachment limit.
+export const VIDEO_MAX_DURATION_MS = 60 * 1000; // 1 minute

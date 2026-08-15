@@ -84,6 +84,8 @@
     "uploading": "Subiendo… {{p}}%",
     "downloadError": "No se pudo descargar",
     "recordVoice": "Grabar mensaje de voz",
+    "recordVideo": "Grabar video",
+    "cameraError": "No se pudo acceder a la cámara",
     "cancelRecording": "Cancelar grabación",
     "sendVoice": "Enviar audio",
     "micError": "No se pudo acceder al micrófono",

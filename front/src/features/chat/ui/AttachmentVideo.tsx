@@ -103,6 +103,21 @@ export function AttachmentVideo({
         } catch { /* tainted/unsupported → the #t=0.1 frame still previews */ }
     };
 
+    // A MediaRecorder webm (recorded IN the app) has no Duration in its header → the <video> seek bar /
+    // total time break. Same one-shot seek-to-end hack as voice notes. (Gallery MP4s already report a
+    // duration, so this is a no-op for them.)
+    const durationFixed = useRef(false);
+    const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>) => {
+        const v = e.currentTarget;
+        if (durationFixed.current) return;
+        if (v.duration === Infinity || Number.isNaN(v.duration)) {
+            durationFixed.current = true;
+            const onTimeUpdate = () => { v.removeEventListener("timeupdate", onTimeUpdate); v.currentTime = 0; };
+            v.addEventListener("timeupdate", onTimeUpdate);
+            v.currentTime = 1e101;
+        }
+    };
+
     const retry = () => { setFailed(false); setUrl(null); setAttempt((a) => a + 1); };
     const onVideoError = () => {
         if (playbackErrors.current < 2) { playbackErrors.current += 1; retry(); } // maybe an expired URL
@@ -122,6 +137,7 @@ export function AttachmentVideo({
             src={`${url}#t=0.1`}
             poster={poster ?? undefined}
             onLoadedData={onLoadedData}
+            onLoadedMetadata={onLoadedMetadata}
             onError={onVideoError}
             className="block max-w-[240px] max-h-[240px] rounded-md bg-black"
             title={fileName}

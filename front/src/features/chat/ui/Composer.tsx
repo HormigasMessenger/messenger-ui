@@ -1,8 +1,9 @@
-import {useCallback, useEffect, useRef, type RefObject} from "react";
+import {useCallback, useEffect, useRef, useState, type RefObject} from "react";
 import {useTranslation} from "react-i18next";
 import {useVoiceRecorder} from "@/features/chat/hooks/useVoiceRecorder.ts";
 import {VOICE_MAX_DURATION_MS} from "@/shared/config/chat.ts";
-import {MicIcon} from "@/shared/ui/icons.tsx";
+import {MicIcon, VideoIcon} from "@/shared/ui/icons.tsx";
+import {VideoRecorderModal} from "./VideoRecorderModal.tsx";
 
 function formatMs(ms: number): string {
     const s = Math.floor(ms / 1000);
@@ -39,6 +40,7 @@ export function Composer({
 }) {
     const {t} = useTranslation();
     const fileRef = useRef<HTMLInputElement>(null);
+    const [showVideoRecorder, setShowVideoRecorder] = useState(false);
     const {recording, elapsedMs, start, stop, cancel} = useVoiceRecorder();
 
     // Stop recording and hand the audio to the normal attachment-upload path.
@@ -123,6 +125,14 @@ export function Composer({
                     >
                         <MicIcon/>
                     </button>
+                    <button
+                        onClick={() => setShowVideoRecorder(true)}
+                        title={t("chat.recordVideo")}
+                        aria-label={t("chat.recordVideo")}
+                        className="p-1.5 text-gray-600 hover:opacity-80"
+                    >
+                        <VideoIcon/>
+                    </button>
                     <textarea
                         ref={inputRef}
                         rows={1}
@@ -147,6 +157,13 @@ export function Composer({
                         ↑
                     </button>
                 </div>
+            )}
+
+            {showVideoRecorder && (
+                <VideoRecorderModal
+                    onSend={(f) => onSendAttachment?.(f)}
+                    onClose={() => setShowVideoRecorder(false)}
+                />
             )}
         </>
     );
