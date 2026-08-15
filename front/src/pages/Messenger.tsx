@@ -13,6 +13,7 @@ import {useChat} from "@/features/chat/hooks";
 import {useOutboxRetry} from "@/features/chat/hooks/useOutboxRetry.ts";
 import {useCallTimeout} from "@/features/call/hooks/useCallTimeout.ts";
 import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
+import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
@@ -104,6 +105,7 @@ export default function Messenger() {
        Render
     ====================== */
     return (
+        <LightboxProvider>
         <div className="relative h-dvh w-screen flex overflow-hidden bg-gray-300">
             <ConnectionBanner/>
             <NotificationPrompt/>
@@ -173,5 +175,6 @@ export default function Messenger() {
                 />
             )}
         </div>
+        </LightboxProvider>
     );
 }

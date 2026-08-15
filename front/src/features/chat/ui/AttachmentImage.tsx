@@ -3,6 +3,7 @@ import {loadAttachmentBlob, saveAttachmentBlob, deleteAttachmentBlob} from "@/fe
 import {blobToThumb} from "@/features/chat/lib/imageCompress.ts";
 import {THUMB_MAX_DIMENSION, THUMB_QUALITY} from "@/shared/config/chat.ts";
 import {useAttachmentObjectUrl} from "@/features/chat/lib/useAttachmentObjectUrl.ts";
+import {useLightbox} from "@/features/chat/ui/lightboxContext.ts";
 
 // Stable module-level fns for the shared cache layer (must not be recreated per render).
 const toThumb = (blob: Blob) => blobToThumb(blob, THUMB_MAX_DIMENSION, THUMB_QUALITY);
@@ -32,10 +33,12 @@ export function AttachmentImage({
         transform: toThumb,
     });
 
+    const {open: openLightbox} = useLightbox();
     const openFull = async () => {
-        // Always resolve a fresh presigned URL for the full-res open (never a stale/expired one).
+        // Always resolve a fresh presigned URL for the full-res view (never a stale/expired one), then
+        // show it in the in-app lightbox instead of a new browser tab.
         const u = (await resolveUrl?.(attachmentId).catch(() => null)) ?? null;
-        if (u) window.open(u, "_blank", "noopener");
+        if (u) openLightbox(u);
     };
 
     if (failed) return (
