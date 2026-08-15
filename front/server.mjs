@@ -55,12 +55,40 @@ function cacheControlFor(path) {
     return "no-cache";
 }
 
+// E2EE hardening (Phase 0): a strict CSP so the app runs only OUR code (can't be tricked into loading
+// attacker JS that would read E2EE keys). Everything the app talks to is same-origin (the edge routes
+// /messenger, /.ory, /webpush and the presigned attachment URLs under this host) → 'self' covers REST,
+// WS and attachment fetch. WebRTC ICE/TURN is not governed by CSP. Inline style ATTRIBUTES (progress
+// bars etc.) need style 'unsafe-inline' (style injection is not a code-exec vector).
+//
+// Shipped REPORT-ONLY first: it blocks nothing, only logs violations to the console, so we can discover
+// anything cross-origin (esp. attachments/MinIO) and the inline SW-registration script (needs its
+// sha256 in script-src) BEFORE flipping to the enforcing `Content-Security-Policy` header.
+const CSP = [
+    "default-src 'self'",
+    "script-src 'self'",            // TODO before enforce: add 'sha256-…' of the inline SW registration
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' blob:",
+    "font-src 'self' data:",
+    "connect-src 'self'",           // REST + same-origin wss + attachment fetch
+    "worker-src 'self'",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'self'",
+].join("; ");
+
 async function sendFile(res, path) {
     const body = await readFile(path);
-    res.writeHead(200, {
+    const headers = {
         "Content-Type": MIME[extname(path)] || "application/octet-stream",
         "Cache-Control": cacheControlFor(path),
-    });
+    };
+    // CSP governs the document; set it on the HTML responses (the SPA shell).
+    if (extname(path) === ".html") headers["Content-Security-Policy-Report-Only"] = CSP;
+    res.writeHead(200, headers);
     res.end(body);
 }
 
