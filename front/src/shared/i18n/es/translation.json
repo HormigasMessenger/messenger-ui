@@ -88,6 +88,7 @@
     "sendVoice": "Enviar audio",
     "micError": "No se pudo acceder al micrófono",
     "voiceMessage": "Mensaje de voz",
+    "video": "Video",
     "loadingImage": "cargando…",
     "msgSendError": "No se pudo enviar — reabre el chat",
     "historyLoadError": "No se pudieron cargar los mensajes"
