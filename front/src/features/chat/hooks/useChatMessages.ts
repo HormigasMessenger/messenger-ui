@@ -5,7 +5,6 @@ import {skipToken} from "@reduxjs/toolkit/query/react";
 import {chatApi} from "@/features/chat/rest/chatApi";
 import {toChatMessageView} from "@/features/chat/model/mapper";
 import type {AppDispatch, RootState} from "@/store/store";
-import type {ChatMessage} from "@/features/chat/model/schema/domainChatMessage.schema";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service";
 import {logger} from "@/shared/logger/logger";
 
@@ -49,17 +48,6 @@ export function useChatMessages() {
     );
 
     /* ======================
-       Handle incoming WS message
-       (patch RTK Query cache)
-    ====================== */
-    const handleIncomingMessage = useCallback(
-        (msg: ChatMessage) => {
-            chatMessagesService.incomingMessage(dispatch, myId, msg);
-        },
-        [dispatch, myId]
-    );
-
-    /* ======================
        Clear chat
     ====================== */
     const clearChat = useCallback(
@@ -88,7 +76,6 @@ export function useChatMessages() {
         isLoading,
         isError,
         reloadChatHistory,
-        handleIncomingMessage,
         clearChat,
     };
 }

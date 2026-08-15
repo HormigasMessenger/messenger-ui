@@ -1,3 +1,6 @@
+// Generic confirm dialog primitive. Lives in shared/ui (a leaf layer) so both pages and features can
+// import it downward — it was in widgets/, which sits ABOVE features, so features/call importing it was
+// an upward FSD violation.
 export default function ConfirmModal({
   title,
   message,

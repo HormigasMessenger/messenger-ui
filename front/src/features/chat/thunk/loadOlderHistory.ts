@@ -2,19 +2,10 @@ import type {AppDispatch, RootState} from "@/store/store";
 import {chatApi} from "@/features/chat/rest/chatApi";
 import {MESSENGER_API} from "@/shared/config/api";
 import {HISTORY_PAGE_SIZE} from "@/shared/config/chat";
-import {parseWireMessage} from "@/features/chat/model/schema/wireMessage.schema";
-import {wireToChatMessage} from "@/features/chat/model/mapper";
+import {toMessages} from "@/features/chat/model/reconcileHistory";
+import {hasMessage} from "@/features/chat/model/historyCache";
 import {isUlid} from "@/shared/ulid/ulid";
 import {logger} from "@/shared/logger/logger";
-
-function toMessages(raw: unknown) {
-    const arr = Array.isArray(raw)
-        ? raw
-        : (raw && typeof raw === "object" && Array.isArray((raw as { messages?: unknown }).messages)
-            ? (raw as { messages: unknown[] }).messages
-            : []);
-    return arr.map(parseWireMessage).filter(Boolean).map((m) => wireToChatMessage(m!));
-}
 
 /**
  * Pull the page of history immediately older than what's loaded (`?before=<oldest ULID>`) and
@@ -51,8 +42,9 @@ export function loadOlderHistory(chatId: string) {
         let added = 0;
         dispatch(
             chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
-                const seen = new Set(draft.map((m) => m.id));
-                const fresh = rows.filter((m) => !seen.has(m.id)); // rows are ASC and older than draft[0]
+                // Canonical id||clientId dedup (model/historyCache); rows are ASC and older than draft[0],
+                // so PREPEND to keep the array chronological (loadOlderHistory's cursor reads draft order).
+                const fresh = rows.filter((m) => !hasMessage(draft, m));
                 added = fresh.length;
                 if (fresh.length) draft.unshift(...fresh);
             })

@@ -4,7 +4,7 @@ import {useTranslation} from "react-i18next";
 import {skipToken} from "@reduxjs/toolkit/query/react";
 import type {RootState} from "@/store/store.ts";
 import {idsDisplayName, useGetIdsUserQuery} from "@/features/directory";
-import ConfirmModal from "@/widgets/modal/ConfirmModal.jsx";
+import ConfirmModal from "@/shared/ui/ConfirmModal.jsx";
 
 interface VideoCallProps {
     localStream: MediaStream | null;

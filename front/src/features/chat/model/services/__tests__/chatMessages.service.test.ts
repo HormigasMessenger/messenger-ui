@@ -1,7 +1,6 @@
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import {chatMessagesService} from "../chatMessages.service";
 import {chatApi} from "@/features/chat/rest/chatApi";
-import type {ChatMessage} from "@/features/chat/model/schema/domainChatMessage.schema.ts";
 import {logger} from "@/shared/logger/logger";
 
 
@@ -31,6 +30,7 @@ vi.mock("@/features/chat/model/outbox", () => ({
 vi.mock("@/shared/logger/logger", () => ({
     logger: {
         debug: vi.fn(),
+        error: vi.fn(),
     },
 }));
 
@@ -41,22 +41,6 @@ describe("chatMessagesService", () => {
     beforeEach(() => {
         dispatch.mockClear();
         vi.clearAllMocks();
-    });
-
-    it("incomingMessage patches getChatHistory by chatId (idempotent)", () => {
-        const msg = {id: "1", chatId: "chat9", from: "user2", to: myId} as ChatMessage;
-
-        chatMessagesService.incomingMessage(dispatch, myId, msg);
-
-        // incomingMessage only patches the open conversation's history now; reconciling the chat
-        // LIST (getChats) on a new-sender message lives in chatMiddleware, not here.
-        expect(chatApi.util.updateQueryData).toHaveBeenCalledWith(
-            "getChatHistory",
-            {myId, chatId: "chat9"},
-            expect.any(Function)
-        );
-
-        expect(dispatch).toHaveBeenCalledTimes(1);
     });
 
     it("clearChatHistory: deletes history and updates cache", async () => {

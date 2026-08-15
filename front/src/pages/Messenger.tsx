@@ -7,7 +7,7 @@ import ChatList from "@/features/chat/ui/ChatList.tsx";
 import ChatWindow from "@/features/chat/ui/ChatWindow.js";
 import {ConnectionBanner} from "@/features/chat/ui/ConnectionBanner.tsx";
 import {NotificationPrompt} from "@/features/notifications";
-import ConfirmModal from "@/widgets/modal/ConfirmModal.jsx";
+import ConfirmModal from "@/shared/ui/ConfirmModal.jsx";
 import VideoCall from "@/features/call/ui/VideoCall.tsx";
 import {useChat} from "@/features/chat/hooks";
 import {useOutboxRetry} from "@/features/chat/hooks/useOutboxRetry.ts";

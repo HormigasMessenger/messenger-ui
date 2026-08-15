@@ -5,6 +5,7 @@ import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import {groupApi} from "@/features/groups/rest/groupApi.ts";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
 import {wireToChatMessage} from "@/features/chat/model/mapper.ts";
+import {upsertMessage} from "@/features/chat/model/historyCache.ts";
 import {buildChatAck, buildReadIn, type WireMessage} from "@/features/chat/model/schema/wireMessage.schema.ts";
 import {markChatUnread, setPeerLastReadId, setTyping} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {markSent} from "@/features/chat/model/slices/outboxSlice.ts";
@@ -47,13 +48,9 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             dispatch(
                 chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                     if (!draft) return;
-                    // Client-side dedup: drop a duplicate live delivery by server id OR by the
-                    // sender's original client messageId (clientId ← correlationId). The latter
-                    // catches a lost-ACK resend, which the backend stores under a fresh server id.
-                    const dup = draft.some(
-                        (m) => m.id === msg.id || (!!msg.clientId && m.clientId === msg.clientId)
-                    );
-                    if (!dup) draft.push(msg);
+                    // Canonical dedup (id || clientId) — see model/historyCache. Catches a lost-ACK
+                    // resend (stored under a fresh server id) and an already-shown optimistic echo.
+                    upsertMessage(draft, msg);
                 })
             );
 
