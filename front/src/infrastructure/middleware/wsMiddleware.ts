@@ -1,4 +1,4 @@
-import type {Middleware, PayloadAction} from "@reduxjs/toolkit";
+import type {Action, Middleware, PayloadAction} from "@reduxjs/toolkit";
 import {
     connected,
     connecting,
@@ -13,12 +13,19 @@ import {DELAY_STEP_MS, MAX_RECONNECT_DELAY} from "@/shared/config/ws";
 import type {OutgoingWSMessage, WSMessage} from "../types.ts";
 import {fromWire, toWire} from "@/infrastructure/ws/frameBridge.ts";
 import {isNotLogged} from "@/shared/utils/checks";
-import type {User} from "@/features/auth";
-import {chatApi} from "@/features/chat/rest/chatApi.ts";
-import type {ChatSummary} from "@/entities/conversation";
 import {logger} from "@/shared/logger/logger.ts";
-import {kratos} from "@/features/auth";
-import {clearUser} from "@/features/auth";
+import type {RootState} from "@/store/store.ts";
+
+// Feature-owned bits are INJECTED from the composition root (store.ts) so this transport layer stays
+// feature-agnostic (it must not import UP into features/auth or features/chat):
+//  - probeSession: resolve if the Kratos session is still valid, reject (with a `.response.status`) if not
+//  - clearUser: the action to dispatch when the session is gone → re-auth
+//  - callConversationId: resolve a call frame's conversationId from the chat directory by counterpart id
+export type WebsocketDeps = {
+    probeSession: () => Promise<unknown>;
+    clearUser: () => Action;
+    callConversationId: (state: unknown, toUserId: string) => string | undefined;
+};
 
 
 type WSConnectAction = PayloadAction<{ url: string }, string, { shouldReconnect: boolean; }>
@@ -56,7 +63,7 @@ let stableTimer: ReturnType<typeof setTimeout> | null = null; // fires once a co
 // Middleware
 // --------------------
 
-export const websocketMiddleware: Middleware =
+export const createWebsocketMiddleware = (deps: WebsocketDeps): Middleware =>
     (store) => (next) => (action) => {
         const { dispatch } = store;
 
@@ -82,8 +89,8 @@ export const websocketMiddleware: Middleware =
         };
 
         const connect = (url: string, shouldReconnect: boolean) => {
-            const state = store.getState();
-            const user : User = state.user;
+            const state = store.getState() as RootState;
+            const user = state.user;
 
 
             if (isNotLogged(user.id)) {
@@ -171,7 +178,7 @@ export const websocketMiddleware: Middleware =
                 // RequireAuth redirect and connect() then skips as not-logged-in); if it's valid, it's
                 // a genuine network issue → keep retrying.
                 if (reconnectAttempts >= 3) {
-                    kratos.toSession().then(
+                    deps.probeSession().then(
                         () => scheduleReconnect(url),
                         (err: unknown) => {
                             // Only treat a real 401/403 as "session gone → re-auth". A network
@@ -181,7 +188,7 @@ export const websocketMiddleware: Middleware =
                             const status = (err as {response?: {status?: number}})?.response?.status;
                             if (status === 401 || status === 403) {
                                 logger.debug("WS reconnect halted: session invalid → re-auth");
-                                dispatch(clearUser());
+                                dispatch(deps.clearUser());
                                 dispatch({type: "ws/disconnect"});
                             } else {
                                 logger.debug("WS session probe inconclusive (network) → keep retrying");
@@ -260,12 +267,7 @@ export const websocketMiddleware: Middleware =
                     let ctx: { conversationId?: string } | undefined;
                     const p = payload as { type?: string; to?: string };
                     if (typeof p.type === "string" && p.type.startsWith("call:") && p.to) {
-                        const st = store.getState();
-                        const myId = (st.user as User)?.id;
-                        const summaries = chatApi.endpoints.getChats.select({myId})(st)?.data as
-                            ChatSummary[] | undefined;
-                        const conv = summaries?.find((s) => s.counterpartId === p.to);
-                        ctx = {conversationId: conv?.conversationId};
+                        ctx = {conversationId: deps.callConversationId(store.getState(), p.to)};
                     }
                     socket.send(JSON.stringify(toWire(payload, ctx)));
                     dispatch(outgoing(payload));

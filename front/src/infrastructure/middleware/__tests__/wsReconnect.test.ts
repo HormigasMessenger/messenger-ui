@@ -1,10 +1,7 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 
-// Mock the auth/kratos + RTK api imports the middleware pulls in, so importing it is side-effect free
-// and the reconnect path never makes a real session probe.
-vi.mock("@/features/auth/model/services/kratos.ts", () => ({
-    kratos: {toSession: vi.fn(() => Promise.resolve())},
-}));
+// The middleware is now feature-agnostic (deps injected), so no auth/api mocks are needed — the test
+// supplies its own deps (a resolving session probe, a no-op clearUser action, no call ctx).
 vi.mock("@/shared/config/ws", () => ({DELAY_STEP_MS: 500, MAX_RECONNECT_DELAY: 8000}));
 
 // A controllable fake WebSocket: records every instance and lets the test drive open/close.
@@ -36,7 +33,7 @@ function makeStore() {
 
 const CONNECT = {type: "ws/connect", payload: {url: "wss://x/ws"}, meta: {shouldReconnect: true}};
 
-let websocketMiddleware: typeof import("../wsMiddleware").websocketMiddleware;
+let mw: ReturnType<typeof import("../wsMiddleware").createWebsocketMiddleware>;
 
 beforeEach(async () => {
     vi.useFakeTimers();
@@ -48,7 +45,12 @@ beforeEach(async () => {
     vi.stubGlobal("WebSocket", FakeWS as unknown as typeof WebSocket);
     // Fresh module state per test (socket/rapidCycles/cooldownUntil are module-level).
     vi.resetModules();
-    ({websocketMiddleware} = await import("../wsMiddleware"));
+    const {createWebsocketMiddleware} = await import("../wsMiddleware");
+    mw = createWebsocketMiddleware({
+        probeSession: () => Promise.resolve(),
+        clearUser: () => ({type: "user/clearUser"}),
+        callConversationId: () => undefined,
+    });
 });
 afterEach(() => {
     vi.useRealTimers();
@@ -58,7 +60,7 @@ afterEach(() => {
 
 function dispatchConnect() {
     const store = makeStore();
-    const run = websocketMiddleware(store as never)((a: unknown) => a);
+    const run = mw(store as never)((a: unknown) => a);
     run(CONNECT as never);
     return store;
 }
@@ -109,7 +111,7 @@ describe("wsMiddleware reconnect circuit breaker", () => {
         const armed = FakeWS.instances.length;
         // A user-driven ws/connect (visibility/online wake) must open a socket RIGHT NOW — the
         // regression was connect() deferring forever behind a stale reconnect timer.
-        const run = websocketMiddleware(store as never)((a: unknown) => a);
+        const run = mw(store as never)((a: unknown) => a);
         run(CONNECT as never);
         expect(FakeWS.instances.length).toBe(armed + 1);
     });

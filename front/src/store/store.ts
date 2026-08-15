@@ -1,7 +1,7 @@
 import { configureStore } from "@reduxjs/toolkit";
 
 // Reducers
-import userReducer from "@/features/auth/slices/userSlice";
+import userReducer, {clearUser} from "@/features/auth/slices/userSlice";
 import callReducer, {webrtcConnected, incomingRemoteEnd} from "@/features/call/model/slices/callSlice";
 import wsReducer from "@/infrastructure/slices/websocketSlice.ts";
 import chatUiReducer from "@/features/chat/model/slices/chatUiSlice";
@@ -11,7 +11,7 @@ import stickyChatsReducer, { saveStickyChats } from "@/features/chat/model/slice
 
 // Middleware
 import { createCallMiddleware } from "@/features/call/middleware/callMiddleware";
-import { websocketMiddleware } from "@/infrastructure/middleware/wsMiddleware.ts";
+import { createWebsocketMiddleware } from "@/infrastructure/middleware/wsMiddleware.ts";
 import { presenceMiddleware } from "@/features/presence/middleware/presenceMiddleware.ts";
 import { chatMiddleware } from "@/features/chat/middleware/chatMiddleware.ts";
 import { authErrorListener } from "@/features/auth/middleware/authErrorMiddleware.ts";
@@ -22,6 +22,8 @@ import { chatApi } from "@/features/chat/rest/chatApi.ts";
 import { contactsApi } from "@/features/contacts/rest/contactsApi.ts";
 import { idsApi } from "@/features/directory/idsApi.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService.ts";
+import { kratos } from "@/features/auth";
+import type {ChatSummary} from "@/entities/conversation";
 
 export function configureAppStore(webRTCService: WebRTCService) {
     const store = configureStore({
@@ -42,7 +44,19 @@ export function configureAppStore(webRTCService: WebRTCService) {
                 chatApi.middleware,
                 contactsApi.middleware,
                 idsApi.middleware,
-                websocketMiddleware,
+                // Inject the feature-owned bits so the WS transport stays feature-agnostic (see wsMiddleware).
+                createWebsocketMiddleware({
+                    probeSession: () => kratos.toSession(),
+                    clearUser,
+                    callConversationId: (state, to) => {
+                        // Loose casts (not RootState) — RootState is derived FROM this store, so naming
+                        // it here would be a circular type reference.
+                        const myId = (state as {user?: {id?: string}}).user?.id;
+                        const summaries = chatApi.endpoints.getChats.select({myId})(state as never)?.data as
+                            ChatSummary[] | undefined;
+                        return summaries?.find((c) => c.counterpartId === to)?.conversationId;
+                    },
+                }),
                 presenceMiddleware,
                 chatMiddleware,
                 createCallMiddleware(webRTCService)
