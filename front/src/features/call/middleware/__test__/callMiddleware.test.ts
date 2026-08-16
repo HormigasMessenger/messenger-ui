@@ -109,16 +109,39 @@ describe("callMiddleware", () => {
         expect(store.dispatch).not.toHaveBeenCalledWith(incomingOffer({ from: "peerZ", offer: {} as RTCSessionDescriptionInit }));
     });
 
-    it("ws/incoming: call:offer от абонента, КОТОРОМУ мы звоним (glare / перезвон по пушу) — не отклоняет, а отвечает", async () => {
-        // We're calling peerCB; they were offline, opened the app from the call push and called back.
-        // Resolve in their favor: drop our outgoing pc WITHOUT signaling (endRemote), then answer.
-        store.getState = vi.fn(() => ({ call: { status: "calling", peerId: "peerCB", incomingOfferData: null } }));
+    it("ws/incoming: call:offer glare — polite сторона (myId < from) уступает и отвечает, не отклоняет", async () => {
+        // Both calling each other (fallback). We're "aaa" < "peerCB" → polite → yield and answer.
+        store.getState = vi.fn(() => ({ user: { id: "aaa" }, call: { status: "calling", peerId: "peerCB", incomingOfferData: null } }));
         const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerCB", offer: {} as RTCSessionDescriptionInit, media: "video" };
         await middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.endRemote).toHaveBeenCalled();
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
         expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerCB", offer: {} as RTCSessionDescriptionInit, media: "video" });
         expect(store.dispatch).toHaveBeenCalledWith(acceptCall());
+    });
+
+    it("ws/incoming: call:offer glare — impolite сторона (myId > from) держит свой offer, не отвечает и не отклоняет", async () => {
+        store.getState = vi.fn(() => ({ user: { id: "zzz" }, call: { status: "calling", peerId: "peerA", incomingOfferData: null } }));
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerA", offer: {} as RTCSessionDescriptionInit };
+        await middleware(store)(next)({ type: "ws/incoming", payload: msg });
+        expect(webRTCService.handleOffer).not.toHaveBeenCalled();
+        expect(webRTCService.declineOffer).not.toHaveBeenCalled();
+        expect(webRTCService.endRemote).not.toHaveBeenCalled();
+    });
+
+    it("ws/incoming: call:offer РЕ-offer от того же абонента, пока мы ringing → обновляем, НЕ отклоняем (баг: убивал звонок)", () => {
+        store.getState = vi.fn(() => ({ call: { status: "ringing", peerId: "peerR", incomingOfferData: {} } }));
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerR", offer: { sdp: "x" } as RTCSessionDescriptionInit, media: "audio" };
+        middleware(store)(next)({ type: "ws/incoming", payload: msg });
+        expect(webRTCService.declineOffer).not.toHaveBeenCalled();
+        expect(store.dispatch).toHaveBeenCalledWith(incomingOffer({ from: "peerR", offer: { sdp: "x" } as RTCSessionDescriptionInit, media: "audio" }));
+    });
+
+    it("ws/incoming: call:offer от того же абонента, пока мы connecting → игнор (НЕ отклоняем)", () => {
+        store.getState = vi.fn(() => ({ call: { status: "connecting", peerId: "peerR", incomingOfferData: {} } }));
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerR", offer: {} as RTCSessionDescriptionInit } });
+        expect(webRTCService.declineOffer).not.toHaveBeenCalled();
+        expect(webRTCService.handleOffer).not.toHaveBeenCalled();
     });
 
     it("ws/incoming: call:ready от абонента, которому мы звоним → пере-отправляем offer (resendOffer)", () => {

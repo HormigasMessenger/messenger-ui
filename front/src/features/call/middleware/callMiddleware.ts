@@ -39,27 +39,42 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                 switch (msg.type) {
                     case "call:offer": {
                         const cs = (getState() as RootState).call;
-                        // GLARE / push-answer: the peer we're currently CALLING is calling US back. They
-                        // were offline, got the call push, opened the app and re-initiated (see
-                        // parseCallDeepLink). Resolve in their favor — drop our own outgoing attempt
-                        // WITHOUT signaling (endRemote, NOT hangUp: a call:end would cancel THEIR call),
-                        // then answer their offer. Both sides converge into one connected call.
-                        if (cs.status === "calling" && msg.from === cs.peerId) {
-                            webRTCService.endRemote();
-                            dispatch(acceptCall());   // calling → connecting
-                            webRTCService.handleOffer({from: msg.from, offer: msg.offer, media: msg.media})
-                                .catch((err) => { exceptionHandler(err); dispatch(localEnd()); });
+                        const offer = {from: msg.from, offer: msg.offer, media: msg.media};
+
+                        // Already engaged with THIS peer → NEVER decline them. A call:end here would kill
+                        // the very call we're answering. A caller re-offers (call:ready re-offer, ICE
+                        // restart) while we already hold their offer, so a second offer from the same peer
+                        // is normal — handle per our state, never reject it.
+                        if (msg.from === cs.peerId) {
+                            if (cs.status === "ringing") {
+                                dispatch(incomingOffer(offer));   // refresh the stored offer (e.g. ICE restart)
+                            } else if (cs.status === "calling") {
+                                // GLARE: both calling each other (only via the fallback callback). Perfect-
+                                // negotiation tiebreak by user id — the "polite" side yields and answers,
+                                // the "impolite" side keeps its own offer (the peer answers it). Avoids a
+                                // double-glare deadlock where both become answerers.
+                                const myId = (getState() as RootState).user?.id ?? "";
+                                if (myId < msg.from) {
+                                    webRTCService.endRemote();
+                                    dispatch(acceptCall());
+                                    webRTCService.handleOffer(offer)
+                                        .catch((err) => { exceptionHandler(err); dispatch(localEnd()); });
+                                }
+                                // impolite → ignore their offer, keep ours.
+                            }
+                            // connecting / in_call → a late/duplicate offer; ignore (do NOT decline).
                             break;
                         }
-                        // Otherwise only a truly idle client may start ringing. If we're already
-                        // ringing/connecting/in a call (or a STRAY third party offers mid-call), decline
-                        // that caller instead of clobbering the active call. declineOffer does NOT touch
-                        // our live pc/streams.
+
+                        // A DIFFERENT peer. Only a truly idle client may start ringing; a stray third party
+                        // mid-call is declined (declineOffer touches only that caller, not our live call).
                         if (cs.status !== "idle") {
+                            logger.warn("declining stray call:offer from another peer while busy",
+                                {from: msg.from, status: cs.status, activePeer: cs.peerId});
                             webRTCService.declineOffer(msg.from);
                             break;
                         }
-                        dispatch(incomingOffer({from: msg.from, offer: msg.offer, media: msg.media}));
+                        dispatch(incomingOffer(offer));
                         break;
                     }
 
