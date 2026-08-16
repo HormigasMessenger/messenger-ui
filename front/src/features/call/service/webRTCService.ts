@@ -9,6 +9,10 @@ import {logger} from "@/shared/logger/logger.ts";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
+function uuid(): string {
+    try { return crypto.randomUUID(); } catch { return "call-" + Date.now() + "-" + Math.random().toString(36).slice(2); }
+}
+
 export class WebRTCService {
     /* ======================
        Private properties
@@ -18,6 +22,9 @@ export class WebRTCService {
     private remotePeerId: string | null = null;
     private pendingIce: RTCIceCandidateInit[] = [];
     private remoteReady: boolean = false;
+    // One id per outgoing call attempt (caller-minted), carried in the offer so a re-offer to a callee
+    // who joined late (from the call push) is recognizably the SAME call. Backend never sees it.
+    private callId: string | null = null;
     // Audio-only (voice) call → init() opens the mic without a camera. Set per call by startCall (caller)
     // / handleOffer (callee) before init runs.
     private audioOnly: boolean = false;
@@ -89,6 +96,7 @@ export class WebRTCService {
         this.remoteReady = false;
         this.pendingIce = [];
         this.audioOnly = false;
+        this.callId = null;
 
         this.pc?.close();
         this.pc = null;
@@ -162,6 +170,7 @@ export class WebRTCService {
 
         this.audioOnly = audioOnly;
         this.remotePeerId = peerId;
+        this.callId = uuid();
 
         try {
             await this.init();
@@ -180,7 +189,33 @@ export class WebRTCService {
             to: peerId,
             offer,
             media: audioOnly ? "audio" : "video",
+            callId: this.callId ?? undefined,
         });
+    }
+
+    /* ======================
+       Re-send the current offer to the peer we're calling. Used when the callee was offline, got the
+       call push, opened the app and signalled call:ready — we re-emit the SAME offer so THEY receive a
+       normal incoming call (real Accept/Decline dialog). No-op if we're not mid-call (offer gone).
+    ====================== */
+    public resendOffer(): boolean {
+        const offer = this.pc?.localDescription;
+        if (!this.pc || !this.remotePeerId || !offer) return false;
+        this.send({
+            type: "call:offer",
+            to: this.remotePeerId,
+            offer,
+            media: this.audioOnly ? "audio" : "video",
+            callId: this.callId ?? undefined,
+        });
+        return true;
+    }
+
+    /* ======================
+       Tell the caller "I'm here — (re)send the offer" after opening from a call push (callee side).
+    ====================== */
+    public signalReady(to: string, callId?: string) {
+        this.send({type: "call:ready", to, callId});
     }
 
     /* ======================

@@ -6,7 +6,9 @@ import {
     incomingOffer,
     incomingRemoteEnd,
     localEnd,
+    outgoingCall,
 } from "@/features/call/model/slices/callSlice.js";
+import {READY_FALLBACK_MS} from "@/shared/config/webrtc.ts";
 import { createCallMiddleware } from "../callMiddleware";
 import type { WebRTCService } from "@/features/call/service/webRTCService";
 import { chatApi } from "@/features/chat/rest/chatApi.ts";
@@ -58,6 +60,8 @@ describe("callMiddleware", () => {
             endRemote: vi.fn(),
             declineOffer: vi.fn(),
             rejectCall: vi.fn(),
+            resendOffer: vi.fn(() => true),
+            signalReady: vi.fn(),
             getConnectionState: vi.fn(() => null),
         } as unknown as WebRTCService;
 
@@ -113,6 +117,48 @@ describe("callMiddleware", () => {
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
         expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerCB", offer: {} as RTCSessionDescriptionInit, media: "video" });
         expect(store.dispatch).toHaveBeenCalledWith(acceptCall());
+    });
+
+    it("ws/incoming: call:ready от абонента, которому мы звоним → пере-отправляем offer (resendOffer)", () => {
+        store.getState = vi.fn(() => ({ call: { status: "calling", peerId: "peerR", incomingOfferData: null } }));
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:ready", from: "peerR" } });
+        expect(webRTCService.resendOffer).toHaveBeenCalled();
+    });
+
+    it("ws/incoming: call:ready когда мы idle (уже сдались) → НЕ пере-отправляем", () => {
+        store.getState = vi.fn(() => ({ call: { status: "idle", peerId: null, incomingOfferData: null } }));
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:ready", from: "peerR" } });
+        expect(webRTCService.resendOffer).not.toHaveBeenCalled();
+    });
+
+    it("call/answerViaPush шлёт call:ready и, если offer не пришёл, откатывается на glare-перезвон", () => {
+        vi.useFakeTimers();
+        try {
+            store.getState = vi.fn(() => ({ call: { status: "idle", peerId: null, conversationId: "c9", incomingOfferData: null } }));
+            middleware(store)(next)({ type: "call/answerViaPush", payload: { peerId: "peerP", conversationId: "c9" } });
+            expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
+            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+            vi.advanceTimersByTime(READY_FALLBACK_MS);
+            // Still idle after the window → fall back to calling them back.
+            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("call/answerViaPush: если offer пришёл (не idle) — фолбэк-перезвон НЕ срабатывает", () => {
+        vi.useFakeTimers();
+        try {
+            // Idle when the ready is sent, then ringing by the time the fallback timer fires.
+            let status = "idle";
+            store.getState = vi.fn(() => ({ call: { status, peerId: "peerP", conversationId: "c9", incomingOfferData: null } }));
+            middleware(store)(next)({ type: "call/answerViaPush", payload: { peerId: "peerP", conversationId: "c9" } });
+            status = "ringing";
+            vi.advanceTimersByTime(READY_FALLBACK_MS);
+            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it("ws/incoming: call:ice вызывает addIce", async () => {

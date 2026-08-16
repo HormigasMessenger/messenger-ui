@@ -5,12 +5,14 @@ import {
     incomingAnswer,
     incomingOffer,
     incomingRemoteEnd,
-    localEnd
+    localEnd,
+    outgoingCall
 } from "@/features/call/model/slices/callSlice.js";
 import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
 import {selectCallConversationId} from "@/features/chat/model/directDirectory.ts";
+import {READY_FALLBACK_MS} from "@/shared/config/webrtc.ts";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
@@ -56,6 +58,17 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                             break;
                         }
                         dispatch(incomingOffer({from: msg.from, offer: msg.offer, media: msg.media}));
+                        break;
+                    }
+
+                    case "call:ready": {
+                        // The callee opened from the call push and is ready. If we're STILL ringing them,
+                        // re-send our offer so they get a real incoming Accept/Decline dialog. If we've
+                        // already given up (idle), ignore — their glare-callback fallback rings us instead.
+                        const cs = (getState() as RootState).call;
+                        if (cs.status === "calling" && msg.from === cs.peerId) {
+                            webRTCService.resendOffer();
+                        }
                         break;
                     }
 
@@ -106,6 +119,23 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                     exceptionHandler(err);
                     dispatch(localEnd()); // 🔥 Middleware диспатчит localEnd
                 });
+        }
+
+        /* ======================
+           Answer via push: the callee opened from the incoming-call notification. Ask the still-ringing
+           caller to (re)send the offer (→ a real incoming dialog here); if none arrives shortly, fall
+           back to the glare callback (call them back ourselves). conversationId was stashed by the reducer
+           so this call:ready — and the later answer/ice — route correctly even before getChats loads.
+        ====================== */
+        if (callAction.type === "call/answerViaPush") {
+            const {peerId, conversationId} =
+                (action as PayloadAction<{ peerId: string; conversationId: string }>).payload;
+            webRTCService.signalReady(peerId);
+            setTimeout(() => {
+                if ((getState() as RootState).call.status === "idle") {
+                    dispatch(outgoingCall({peerId, conversationId}));
+                }
+            }, READY_FALLBACK_MS);
         }
 
         /* ======================

@@ -22,6 +22,14 @@ const callSlice = createSlice({
       state.audioOnly = action.payload.audioOnly ?? false;
     },
 
+    // Callee opened from a call push. Stash the conversationId (so the outgoing call:ready — and the
+    // later answer/ice — route correctly even before getChats loads) but stay IDLE, so when the caller
+    // re-offers we ring a real INCOMING dialog rather than auto-answering. peerId is used only by the
+    // middleware (to address call:ready); we deliberately keep call state otherwise idle.
+    answerViaPush: (state, action: PayloadAction<{ peerId: string; conversationId: string }>) => {
+      state.conversationId = action.payload.conversationId;
+    },
+
     incomingOffer: (state, action: PayloadAction<FromOffer>) => {
       state.status = "ringing";
       state.peerId = action.payload.from;
@@ -70,6 +78,7 @@ const callSlice = createSlice({
 
 export const {
   outgoingCall,
+  answerViaPush,
   incomingOffer,
   acceptCall,
   incomingAnswer,

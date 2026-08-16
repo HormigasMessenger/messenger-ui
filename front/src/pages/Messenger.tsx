@@ -16,7 +16,7 @@ import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
 import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
-import {outgoingCall, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
+import {outgoingCall, answerViaPush, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
 import {parseCallDeepLink} from "@/features/call/model/callDeepLink.ts";
 import {useWebRTC} from "@/features/call/hooks/useWebRTC.ts";
 
@@ -66,10 +66,10 @@ export default function Messenger() {
         const link = parseCallDeepLink(searchParams);
         if (!link) return;
         openChat(link.conversationId);
-        // Pass the conversationId explicitly: on a cold start the getChats directory isn't loaded yet,
-        // so resolving it from the chat list would fail ("open a chat first"). The push already carries
-        // it — thread it through so the call frame is valid immediately.
-        dispatch(outgoingCall({peerId: link.peerId, conversationId: link.conversationId}));
+        // Answer flow: tell the still-ringing caller "I'm here" so they re-send the offer and we show a
+        // real INCOMING dialog. conversationId comes from the push (survives a cold start before getChats
+        // loads). Falls back to a glare callback if no offer arrives (see callMiddleware answerViaPush).
+        dispatch(answerViaPush({peerId: link.peerId, conversationId: link.conversationId}));
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");
