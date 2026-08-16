@@ -108,10 +108,14 @@ async function claimShow(messageId) {
 
 async function showChatNotification(payload) {
     const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
-    // Dedup across channels + across the backend's redelivery (L1 sync claim, then durable L2).
-    if (!(await claimShow(data.messageId))) return;
-
     const isCall = data.kind === "call";
+    // Dedup MESSAGES across channels + redelivery (L1 sync claim, then durable L2). CALLS are exempt:
+    // dedup is for avoiding double message banners, but a call must ALWAYS show — the backend sends one
+    // per call and a reused/colliding messageId would silently swallow a real incoming call. Any true
+    // visual duplicate is already collapsed by the per-conversation call `tag` below, so showing every
+    // call push is safe.
+    if (!isCall && !(await claimShow(data.messageId))) return;
+
     const title = (payload && payload.title) || (isCall ? "Incoming call" : "New message");
     // A call gets its OWN tag so it never collapses into a message notification for the same chat.
     const tag = isCall

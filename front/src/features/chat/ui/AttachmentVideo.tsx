@@ -1,22 +1,20 @@
-import {useEffect, useRef, useState, type SyntheticEvent} from "react";
+import {useCallback, useEffect, useRef, useState, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
 import {loadAttachmentBlob, saveAttachmentBlob} from "@/features/chat/db/db.ts";
 import {targetDimensions} from "@/features/chat/lib/imageCompress.ts";
 import {THUMB_MAX_DIMENSION, THUMB_QUALITY} from "@/shared/config/chat.ts";
 
 /**
- * Inline player for a video attachment. The video itself STREAMS the presigned URL (clips run up to the
- * 25MB cap — fetching+caching the whole file would be the wrong trade-off). What we DO cache is a small
- * POSTER (the first frame), keyed by attachmentId in the shared media cache (video never stores its main
- * blob there, so no key clash): a freshly-arrived video otherwise shows a blank player with no preview.
+ * Inline video attachment with CLICK-TO-PLAY. Opening a chat must NOT eagerly stream every video: the old
+ * behavior mounted a <video preload="metadata"> per clip, which fetched each file's head AND ran the
+ * MediaRecorder-webm duration hack (a seek to the end that scans the whole remote file) — N videos = a
+ * visibly janky chat open. Now we show only a cheap POSTER (a small first-frame WebP cached in IndexedDB,
+ * keyed by attachmentId) plus a play button; nothing is resolved or streamed until the user taps play.
  *
- * Two layers of "show a first frame":
- *  - `#t=0.1` media fragment on the src → the browser paints the frame at 0.1s as the poster immediately,
- *    no generation, works while streaming (esp. mobile, where preload often shows nothing otherwise).
- *  - Once a frame decodes we draw it to a canvas (same-origin → not tainted), downscale to a WebP, use it
- *    as the poster, and cache it — so re-opening the chat shows the preview instantly without streaming.
- *
- * Resolve is retried for a just-uploaded object; a playback error re-resolves a fresh presigned URL.
+ * On first play we resolve the presigned URL, stream the clip, draw the first decoded frame to a downscaled
+ * WebP poster and cache it — so the next time the chat opens this video shows a real thumbnail instantly,
+ * still with zero streaming. A video with no cached poster yet just shows a generic placeholder until its
+ * first play. Resolve is retried for a just-uploaded object; a playback error re-resolves a fresh URL.
  */
 export function AttachmentVideo({
     attachmentId,
@@ -28,7 +26,8 @@ export function AttachmentVideo({
     resolveUrl?: (attachmentId: string) => Promise<string | null>;
 }) {
     const {t} = useTranslation();
-    const [url, setUrl] = useState<string | null>(null);     // presigned URL (streamed)
+    const [playing, setPlaying] = useState(false);            // user tapped play → resolve + stream
+    const [url, setUrl] = useState<string | null>(null);      // presigned URL (streamed)
     const [poster, setPoster] = useState<string | null>(null); // objectURL of the cached/generated frame
     const [failed, setFailed] = useState(false);
     const [attempt, setAttempt] = useState(0);
@@ -37,20 +36,39 @@ export function AttachmentVideo({
     const posterUrlRef = useRef<string | null>(null); // live poster objectURL, for revoke
 
     const [prevId, setPrevId] = useState(attachmentId);
-    if (attachmentId !== prevId) { setPrevId(attachmentId); setUrl(null); setPoster(null); setFailed(false); }
+    if (attachmentId !== prevId) {
+        setPrevId(attachmentId);
+        setPlaying(false); setUrl(null); setPoster(null); setFailed(false);
+    }
 
-    // Set the poster, revoking any previous objectURL first; revoke on unmount too.
-    const applyPoster = (blob: Blob) => {
+    // Set the poster, revoking any previous objectURL first; revoke on unmount too. Stable callback (only
+    // ever invoked from effects/handlers, never during render).
+    const applyPoster = useCallback((blob: Blob) => {
         if (posterUrlRef.current) URL.revokeObjectURL(posterUrlRef.current);
         posterUrlRef.current = URL.createObjectURL(blob);
         setPoster(posterUrlRef.current);
-    };
+    }, []);
     useEffect(() => () => {
         if (posterUrlRef.current) { URL.revokeObjectURL(posterUrlRef.current); posterUrlRef.current = null; }
     }, []);
 
-    // Resolve the presigned URL (retry for a just-uploaded object).
+    // Serve a cached first-frame poster immediately if we have one (cheap local read, NO streaming). This
+    // is the only work done on chat open — everything else waits for a play tap.
     useEffect(() => {
+        let alive = true;
+        posterDone.current = false;   // reset per attachment (kept out of render — ref writes there are illegal)
+        loadAttachmentBlob(attachmentId).then((blob) => {
+            if (!alive || !blob) return;
+            posterDone.current = true;
+            applyPoster(blob);
+        }).catch(() => { /* no cached poster yet → generic placeholder until first play */ });
+        return () => { alive = false; };
+    }, [attachmentId, applyPoster]);
+
+    // Resolve the presigned URL — ONLY after the user asks to play (deferred so a chat open doesn't hit the
+    // backend for every video). Retried for a just-uploaded object.
+    useEffect(() => {
+        if (!playing) return;
         let alive = true;
         let timer: ReturnType<typeof setTimeout> | undefined;
         let tries = 0;
@@ -69,20 +87,10 @@ export function AttachmentVideo({
         };
         go();
         return () => { alive = false; if (timer) clearTimeout(timer); };
-    }, [attachmentId, attempt, resolveUrl]);
+    }, [playing, attachmentId, attempt, resolveUrl]);
 
-    // Poster: serve a cached first-frame immediately if we have one (no streaming needed to preview).
-    useEffect(() => {
-        let alive = true;
-        loadAttachmentBlob(attachmentId).then((blob) => {
-            if (!alive || !blob) return;
-            posterDone.current = true;
-            applyPoster(blob);
-        }).catch(() => { /* no cached poster yet */ });
-        return () => { alive = false; };
-    }, [attachmentId]);
-
-    // First decoded frame → draw, downscale to a WebP poster, cache it, show it.
+    // First decoded frame → draw, downscale to a WebP poster, cache it, show it (so the NEXT chat open has
+    // a real thumbnail with no streaming).
     const onLoadedData = (e: SyntheticEvent<HTMLVideoElement>) => {
         if (posterDone.current) return;
         const v = e.currentTarget;
@@ -104,8 +112,8 @@ export function AttachmentVideo({
     };
 
     // A MediaRecorder webm (recorded IN the app) has no Duration in its header → the <video> seek bar /
-    // total time break. Same one-shot seek-to-end hack as voice notes. (Gallery MP4s already report a
-    // duration, so this is a no-op for them.)
+    // total time break. Same one-shot seek-to-end hack as voice notes. Now that it only runs AFTER a play
+    // tap (not on chat open), its cost is off the open path. (Gallery MP4s already report a duration.)
     const durationFixed = useRef(false);
     const onLoadedMetadata = (e: SyntheticEvent<HTMLVideoElement>) => {
         const v = e.currentTarget;
@@ -129,10 +137,37 @@ export function AttachmentVideo({
             🎬 {t("chat.video")} — ↻
         </button>
     );
+
+    // Not playing yet → cheap poster + play overlay. No URL resolve, no stream, no metadata scan.
+    if (!playing) {
+        return (
+            <button
+                type="button"
+                onClick={() => setPlaying(true)}
+                className="relative block max-w-[240px] max-h-[240px] rounded-md bg-black overflow-hidden"
+                title={fileName}
+                aria-label={t("chat.video")}
+            >
+                {poster
+                    ? <img src={poster} alt={fileName} className="block max-w-[240px] max-h-[240px] object-contain"/>
+                    : <div className="flex items-center justify-center w-[240px] h-[160px] text-3xl">🎬</div>}
+                <span className="absolute inset-0 flex items-center justify-center">
+                    <span className="flex items-center justify-center w-12 h-12 rounded-full bg-black/55">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="white" aria-hidden="true">
+                            <path d="M8 5v14l11-7z"/>
+                        </svg>
+                    </span>
+                </span>
+            </button>
+        );
+    }
+
+    // Playing → resolve (if needed) + stream.
     if (!url) return <span className="opacity-60 text-xs">🎬 {t("chat.video")}…</span>;
     return (
         <video
             controls
+            autoPlay
             preload="metadata"
             src={`${url}#t=0.1`}
             poster={poster ?? undefined}

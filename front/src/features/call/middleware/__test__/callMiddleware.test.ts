@@ -10,7 +10,6 @@ import {
     pushAnswerFlushed,
 } from "@/features/call/model/slices/callSlice.js";
 import {connected} from "@/infrastructure/slices/websocketSlice.ts";
-import {READY_FALLBACK_MS} from "@/shared/config/webrtc.ts";
 import { createCallMiddleware } from "../callMiddleware";
 import type { WebRTCService } from "@/features/call/service/webRTCService";
 import { chatApi } from "@/features/chat/rest/chatApi.ts";
@@ -156,20 +155,14 @@ describe("callMiddleware", () => {
         expect(webRTCService.resendOffer).not.toHaveBeenCalled();
     });
 
-    it("call/answerViaPush при подключённом WS: шлёт call:ready и, если offer не пришёл, откатывается на glare-перезвон", () => {
-        vi.useFakeTimers();
-        try {
-            const pending = { peerId: "peerP", conversationId: "c9" };
-            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
-            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
-            expect(store.dispatch).toHaveBeenCalledWith(pushAnswerFlushed());
-            expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
-            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
-            vi.advanceTimersByTime(READY_FALLBACK_MS);
-            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
-        } finally {
-            vi.useRealTimers();
-        }
+    it("call/answerViaPush при подключённом WS: шлёт call:ready (без всякого фолбэк-перезвона)", () => {
+        const pending = { peerId: "peerP", conversationId: "c9" };
+        store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
+        middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
+        expect(store.dispatch).toHaveBeenCalledWith(pushAnswerFlushed());
+        expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
+        // No fallback callback anymore — must NOT spontaneously start an outgoing call.
+        expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
     });
 
     it("call/answerViaPush при ОТКЛЮЧЁННОМ WS ждёт — call:ready уходит только на ws/connected (холодный старт)", () => {
@@ -181,34 +174,6 @@ describe("callMiddleware", () => {
         store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
         middleware(store)(next)(connected());
         expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
-    });
-
-    it("call/answerViaPush: media=audio → фолбэк-перезвон тоже audio (аудио не превращается в видео)", () => {
-        vi.useFakeTimers();
-        try {
-            const pending = { peerId: "peerP", conversationId: "c9", media: "audio" as const };
-            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
-            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
-            vi.advanceTimersByTime(READY_FALLBACK_MS);
-            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: true }));
-        } finally {
-            vi.useRealTimers();
-        }
-    });
-
-    it("call/answerViaPush: если offer пришёл (не idle) — фолбэк-перезвон НЕ срабатывает", () => {
-        vi.useFakeTimers();
-        try {
-            const pending = { peerId: "peerP", conversationId: "c9" };
-            let status = "idle";
-            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status, pendingPushAnswer: pending, incomingOfferData: null } }));
-            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
-            status = "ringing";
-            vi.advanceTimersByTime(READY_FALLBACK_MS);
-            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
-        } finally {
-            vi.useRealTimers();
-        }
     });
 
     it("ws/incoming: call:ice вызывает addIce", async () => {

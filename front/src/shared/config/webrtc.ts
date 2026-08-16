@@ -11,11 +11,6 @@ const TURN_PASS = (import.meta.env.VITE_TURN_PASS as string | undefined) ?? "pas
 // caller goes idle and the callback simply rings them as a fresh incoming call instead.
 export const CALL_TIMEOUT_MS = 60_000;
 
-// Answering from a call push: the callee sends call:ready and expects the caller to re-offer (→ a real
-// incoming dialog). If no offer arrives within this window (caller gave up, or the ready was lost), fall
-// back to the glare callback — the callee calls the caller back instead.
-export const READY_FALLBACK_MS = 4_000;
-
 export const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
         { urls: "stun:stun.l.google.com:19302" },

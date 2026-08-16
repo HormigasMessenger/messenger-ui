@@ -6,7 +6,6 @@ import {
     incomingOffer,
     incomingRemoteEnd,
     localEnd,
-    outgoingCall,
     pushAnswerFlushed
 } from "@/features/call/model/slices/callSlice.js";
 import {connected} from "@/infrastructure/slices/websocketSlice.ts";
@@ -14,7 +13,6 @@ import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
 import {selectCallConversationId} from "@/features/chat/model/directDirectory.ts";
-import {READY_FALLBACK_MS} from "@/shared/config/webrtc.ts";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
@@ -140,10 +138,11 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
 
         /* ======================
            Answer via push: the callee opened from the incoming-call notification. We ask the still-ringing
-           caller to (re)send the offer (→ a real incoming dialog here); if none arrives shortly, fall back
-           to the glare callback (call them back ourselves — with the SAME media, so an audio call can't
-           turn into video). conversationId was stashed so call:ready / answer / ice route correctly even
-           before getChats loads.
+           caller to (re)send the offer, which arrives as a normal call:offer → a real incoming dialog here.
+           No fallback callback: it fired a spurious (and media-wrong) call AFTER the real one ended, and
+           the re-offer path covers the realistic window (the caller rings 60s). If the caller already gave
+           up, nothing happens — far better than a bogus ring. conversationId was stashed so call:ready /
+           answer / ice route correctly even before getChats loads.
 
            CRITICAL: on a cold start the WS opens only AFTER we mount, and ws/send drops frames on a closed
            socket — so we can't send call:ready right away. flushPushAnswer() runs it the moment we ARE
@@ -155,11 +154,6 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
             if (!p || cs.status !== "idle") return;   // nothing pending, or a real offer already arrived
             dispatch(pushAnswerFlushed());             // one-shot: don't re-send on a later reconnect
             webRTCService.signalReady(p.peerId);
-            setTimeout(() => {
-                if ((getState() as RootState).call.status === "idle") {
-                    dispatch(outgoingCall({peerId: p.peerId, conversationId: p.conversationId, audioOnly: p.media === "audio"}));
-                }
-            }, READY_FALLBACK_MS);
         };
         if (callAction.type === "call/answerViaPush") {
             if ((getState() as RootState).ws.status === "connected") flushPushAnswer();

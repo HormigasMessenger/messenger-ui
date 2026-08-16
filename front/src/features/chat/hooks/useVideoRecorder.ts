@@ -3,6 +3,12 @@ import toast from "react-hot-toast";
 import {useTranslation} from "react-i18next";
 
 import {logger} from "@/shared/logger/logger.ts";
+import {
+    VIDEO_CAPTURE_MAX_DIMENSION,
+    VIDEO_CAPTURE_FRAME_RATE,
+    VIDEO_CAPTURE_BITS_PER_SECOND,
+    VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND,
+} from "@/shared/config/chat.ts";
 
 /**
  * Camera + mic recording for video messages. Mirrors useVoiceRecorder but records video and EXPOSES the
@@ -64,7 +70,16 @@ export function useVideoRecorder() {
         }
         openingRef.current = true;
         try {
-            const s = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+            // Cap capture resolution + frame rate so we don't record 1080p/60 (huge files, slow upload,
+            // laggy playback). max on BOTH axes → ~720p in either orientation; constraints are advisory.
+            const s = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: {ideal: VIDEO_CAPTURE_MAX_DIMENSION, max: VIDEO_CAPTURE_MAX_DIMENSION},
+                    height: {ideal: VIDEO_CAPTURE_MAX_DIMENSION, max: VIDEO_CAPTURE_MAX_DIMENSION},
+                    frameRate: {ideal: VIDEO_CAPTURE_FRAME_RATE, max: 30},
+                },
+                audio: true,
+            });
             streamRef.current = s;
             setStream(s);
             return true;
@@ -82,7 +97,13 @@ export function useVideoRecorder() {
         if (!s || recRef.current) return false;
         const mime = pickMimeType();
         mimeRef.current = mime;
-        const rec = new MediaRecorder(s, mime ? {mimeType: mime} : undefined);
+        // Cap the bitrate so a clip stays small (fast upload, smooth playback) regardless of the encoder's
+        // default. Bounded with the duration cap, this keeps a message well under the 25MB attachment limit.
+        const rec = new MediaRecorder(s, {
+            ...(mime ? {mimeType: mime} : {}),
+            videoBitsPerSecond: VIDEO_CAPTURE_BITS_PER_SECOND,
+            audioBitsPerSecond: VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND,
+        });
         chunksRef.current = [];
         rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
         rec.onstop = () => {
