@@ -17,6 +17,7 @@ import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
+import {parseCallDeepLink} from "@/features/call/model/callDeepLink.ts";
 import {useWebRTC} from "@/features/call/hooks/useWebRTC.ts";
 
 
@@ -62,14 +63,13 @@ export default function Messenger() {
     // Open the conversation and call the caller back — the original WebRTC offer is stale by the time
     // the app cold-starts, so "answering" re-initiates the call to them. Then strip the params.
     useEffect(() => {
-        const callParam = searchParams.get("call");   // = conversationId
-        const caller = searchParams.get("caller");     // = caller USER id (the signaling recipient)
-        if (!callParam || !caller) return;
-        openChat(callParam);
+        const link = parseCallDeepLink(searchParams);
+        if (!link) return;
+        openChat(link.conversationId);
         // Pass the conversationId explicitly: on a cold start the getChats directory isn't loaded yet,
         // so resolving it from the chat list would fail ("open a chat first"). The push already carries
         // it — thread it through so the call frame is valid immediately.
-        dispatch(outgoingCall({peerId: caller, conversationId: callParam}));
+        dispatch(outgoingCall({peerId: link.peerId, conversationId: link.conversationId}));
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");
