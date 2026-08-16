@@ -131,6 +131,28 @@ describe("callMiddleware", () => {
         expect(store.dispatch).toHaveBeenCalledWith(localEnd());
     });
 
+    it("call/outgoingCall со ЯВНЫМ conversationId звонит даже без беседы в getChats (deep-link из пуша)", async () => {
+        // Cold start from a call notification: getChats isn't loaded, but the push carried the
+        // conversationId → the call must proceed instead of erroring "open a chat first".
+        store.getState = vi.fn(() => stateWithConversation("someoneElse", { status: "calling", peerId: "peer9", conversationId: "cX", incomingOfferData: null }));
+        const action = { type: "call/outgoingCall", payload: { peerId: "peer9", audioOnly: false, conversationId: "cX" } };
+        await middleware(store)(next)(action);
+        expect(webRTCService.startCall).toHaveBeenCalledWith("peer9", false);
+    });
+
+    it("call/outgoingCall резолвит беседу из sticky-чатов (union), когда getChats её не отдаёт", async () => {
+        // An open-but-empty chat is hidden from /api/chats but kept via sticky — calling it must work.
+        store.getState = vi.fn(() => ({
+            call: { status: "calling", peerId: "peerS", conversationId: null, incomingOfferData: null },
+            user: { id: "me" },
+            stickyChats: { byId: { cS: { conversationId: "cS", counterpartId: "peerS", blocked: false, blockedByMe: false, blockedByPeer: false } } },
+            [chatApi.reducerPath]: { queries: {} },
+        }));
+        const action = { type: "call/outgoingCall", payload: { peerId: "peerS", audioOnly: false } };
+        await middleware(store)(next)(action);
+        expect(webRTCService.startCall).toHaveBeenCalledWith("peerS", false);
+    });
+
     it("call/outgoingCall audio-only передаёт audioOnly=true в startCall", async () => {
         store.getState = vi.fn(() => stateWithConversation("peer6", { status: "idle", peerId: null, incomingOfferData: null }));
         const action = { type: "call/outgoingCall", payload: { peerId: "peer6", audioOnly: true } };

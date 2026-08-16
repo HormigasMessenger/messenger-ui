@@ -9,8 +9,7 @@ import {
 import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
-import {chatApi} from "@/features/chat/rest/chatApi.ts";
-import type {ChatSummary} from "@/entities/conversation";
+import {selectCallConversationId} from "@/features/chat/model/directDirectory.ts";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
@@ -70,15 +69,16 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
            Outgoing call
         ====================== */
         if (callAction.type === "call/outgoingCall") {
-            const {peerId, audioOnly} = (action as PayloadAction<{ peerId: string; audioOnly?: boolean }>).payload;
+            const {peerId, audioOnly, conversationId} =
+                (action as PayloadAction<{ peerId: string; audioOnly?: boolean; conversationId?: string }>).payload;
 
-            // A call frame needs a conversationId (resolved from the chat directory by counterpart id)
-            // or the backend drops the SIGNAL_IN and the caller hangs on "calling" until the 30s
-            // timeout. If there's no conversation with this peer, fail fast with a clear message.
+            // A call frame needs a conversationId or the backend drops the SIGNAL_IN and the caller
+            // hangs on "calling" until the 30s timeout. It comes from one of two places: an explicit id
+            // (a call push deep-link carries it — survives a cold start before getChats loads) or the
+            // UNION chat directory (getChats ∪ sticky, so an open-but-empty chat still resolves). Only
+            // when NEITHER yields a conversationId do we fail fast with a clear message.
             const st = getState() as RootState;
-            const myId = st.user?.id;
-            const summaries = chatApi.endpoints.getChats.select({myId})(st)?.data as ChatSummary[] | undefined;
-            if (!summaries?.some((s) => s.counterpartId === peerId)) {
+            if (!conversationId && !selectCallConversationId(st, peerId)) {
                 toast.error(i18n.t("call.noConversation"));
                 dispatch(localEnd());
                 return result;
