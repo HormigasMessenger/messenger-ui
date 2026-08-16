@@ -29,3 +29,19 @@ export async function saveNames(map: Record<string, string>): Promise<void> {
         await tx.done;
     } catch { /* best-effort — names just fall back to generic in notifications */ }
 }
+
+/**
+ * Read the whole id→name cache. Used to SEED the address book on a cold start: the chat list can render
+ * real names instantly from this persistent cache while the IDS directory re-fetches in the background
+ * (read-through), instead of briefly showing ids/emails. Best-effort — returns {} on any failure.
+ */
+export async function loadNames(): Promise<Record<string, string>> {
+    try {
+        const d = await db();
+        const keys = await d.getAllKeys(STORE);
+        const vals = await d.getAll(STORE);
+        const out: Record<string, string> = {};
+        keys.forEach((k, i) => { if (typeof k === "string" && typeof vals[i] === "string") out[k] = vals[i] as string; });
+        return out;
+    } catch { return {}; }
+}

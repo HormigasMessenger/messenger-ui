@@ -1,196 +1,199 @@
+# 🐜 Hormiga Messenger — Web Client
 
-# 💬📹 Real-Time Chat & Video Call Application
+A real-time **messaging + voice/video calling** Progressive Web App: the browser client for the
+Quarkus **HormigaMessanger** backend, running behind the **Ory** edge. Chat, calls, attachments,
+presence, read receipts, Web Push — installable, offline-capable, ES/EN.
 
-A real-time messaging and video calling application built with **React**, **Redux Toolkit**, **WebSocket**, and **WebRTC**. The project demonstrates a clean separation of concerns between UI, application state, and low-level real-time communication logic.
+> **Live:** `https://hormi.isolutions.io/messenger-ui/` · Auth is the same-origin **Ory Kratos** session (no separate login).
 
----
-
-## 🐜 HormigaMessanger integration (branch `feat/hormiga-messenger-adapter`)
-
-This branch adapts the app into a **browser test harness for [HormigaMessanger]** (the Quarkus
-messenger backend), running behind the **Ory edge** on staging `https://hormi.isolutions.io/messenger-ui/`.
-The **backend is read-only** — every change here is frontend + ops. It reuses the existing Ory Kratos
-session from the same browser window (same-origin cookie), so there is no separate login.
-
-**What was done (all browser-verified with Playwright, two Kratos sessions):**
-
-- **Transport rewritten to the HormigaMessanger WS CLIENT-CONTRACT** — `CHAT_IN`/`CHAT_OUT` with
-  full-frame `CHAT_ACK` / `READ_IN` / `TYPING_IN`, ULID de-duplication, optimistic own-message echo,
-  a durable outbox with reconnect flush, and REST history read-through on (re)connect.
-- **WebRTC signaling bridged over the WS `SIGNAL_IN`/`SIGNAL_OUT`** frames (`infrastructure/ws/frameBridge.ts`)
-  so the existing `features/call/*` state machine is untouched.
-- **Chat list** from `GET /api/chats`; participant **names from the IDS directory** with a presence fallback.
-- **Messaging features:** read receipts (✓/✓✓), typing indicator, presence online/offline, block/unblock,
-  delete message, **attachments** (MinIO two-phase presigned upload/download) with **inline image thumbnails**.
-- **Read receipts (✓✓) — server-ULID watermark, per side (backend contract):**
-  - Mark read: `READ_IN` with `correlationId` = the largest **server** messageId rendered (from
-    `CHAT_OUT.messageId` or history); REST fallback `POST /api/chats/{id}/read?lastReadId=<serverMessageId>`.
-    Server-id only, monotonic (forward-only).
-  - Show ✓✓: `GET /api/chats/{id}/messages` returns `{ messages, peerLastReadId }`; my message is read ⇔
-    `myMsg.serverMessageId <= peerLastReadId` (ULID string compare). My own `serverMessageId` is captured
-    from `CHAT_ACK`. Live updates via `READ_OUT.correlationId`.
-  - Soft/best-effort (may lag, self-heals on the next `READ_IN`); a null/legacy-non-ULID watermark is
-    ignored (no false ✓✓). id-space: recipient ← `CHAT_OUT.messageId`, sender ← `CHAT_ACK.serverMessageId`;
-    the local (client) id rides in `correlationId` and never participates in the read mark.
-- **Web Push (offline notifications):** service worker `push`/`notificationclick` handlers + a subscription
-  lifecycle (`features/notifications/push.ts`) against the **hormiga-webpush** service behind the edge
-  (`/webpush/**`, VAPID). Client + service are live; delivery when the app is fully closed additionally
-  requires the messenger to emit the `chat.offline.notify` Kafka event (backend owner — see hormiga-webpush
-  `DESIGN.md` §2). The webpush consumer idles at zero lag until then.
-- **Video calls:** offer/answer/ICE signaling + a coturn **TURN** server; incoming-call modal with caller name.
-  Glare-guarded (a second incoming offer is declined, not clobbered); the peer connection + camera/mic are
-  torn down on unmount.
-- **Auth:** startup session check → `/login`; **logout** kills the Kratos session via a background request
-  and routes to our own `/login` (no visible bounce to Kratos, no Kratos config change). Logout also wipes
-  the outbox + cached history (Redux + IndexedDB) so nothing leaks to the next user on a shared device.
-
-**Run / deploy:**
-
-- Config is build-time Vite env — see [`front/.env.example`](front/.env.example) (all paths are host-relative
-  to the Ory edge origin).
-- Build + serve locally: `cd front && npx vite build --base=/messenger-ui/` then `PORT=5555 node server.mjs`.
-- One-shot staging deploy (build → ship → atomic swap → edge health check): `DEPLOY_HOST=user@host ./deploy.sh`.
-
-**Companion docs:**
-
-- [`FEATURES.md`](FEATURES.md) — per-feature status & verification checklist.
-- [`HORMIGA-INTEGRATION.md`](HORMIGA-INTEGRATION.md) — integration plan & frame-mapping.
-- [`DEPLOYMENT-CHANGES.md`](DEPLOYMENT-CHANGES.md) — staging deploy-environment deltas (handoff for the
-  hormiga-deploy repo: nginx routes, container env, coturn, front4mess, MinIO).
-
-> The original demo description below still documents the base UI/architecture (call state machine, layering).
+The app is a thin, well-layered front end over a real-time protocol: WebSocket for messaging/signaling,
+WebRTC for media, REST (presigned MinIO) for attachments, and the IDS directory for names. The design goal
+is a **clean domain model** and **strict layering** so the real-time complexity stays contained.
 
 ---
 
-## ✨ Features
+## What you can do (use cases)
 
-- 💬 **Real-time chat**: one-to-one messaging, unread message tracking, chat history loading & deletion  
-- 📹 **Video & audio calls (WebRTC)**: incoming/outgoing calls, call accept/reject flow, ICE candidate buffering, TURN/STUN support  
-- 🔁 **Robust state management**: Redux-based call state machine, deterministic call lifecycle  
-- 🧠 **Safe WebRTC lifecycle**: race-condition protection, idempotent cleanup, defensive signaling handling
-
----
-
-## 🏗️ Architecture Overview
-
-The project is split into **three independent layers**:
-
-UI (React Components)
-↓
-Application State (Redux)
-↓
-Transport / Media Layer (WebRTC + WebSocket)
-
-yaml
-Copy code
-
-Each layer has a single responsibility and does **not leak concerns** into the others.
+| As a user I can… | How it works under the hood |
+|---|---|
+| **Sign in** without a separate login | reuses the same-browser Ory Kratos session cookie |
+| **See my chats** (1:1 and groups), unread first | `GET /api/chats` ∪ `GET /api/groups`, names from the IDS directory |
+| **Message in real time** with delivery + read state | optimistic **outbox** → WS `CHAT_IN` → `CHAT_ACK`; ✓/✓✓ from a per-side **ULID read-watermark** |
+| See **typing** and **online/last-seen** | `TYPING_*` / `PRESENT_*` frames |
+| **Send voice / photo / video / file** | two-phase **presigned MinIO** upload; client-side image compress + video caps + thumbnails |
+| **Call** (audio or video), and **answer a call whose app was closed** | WebRTC over `SIGNAL_IN/OUT`; Web Push wakes the callee, who re-joins via a `call:ready` re-offer |
+| Get **notifications** naming the sender | dual channel (in-app + Web Push) through one Service-Worker arbiter, sender name from a persistent cache |
+| **Block/unblock**, **delete** a message | mutual block gating; author-checked delete |
+| Work **offline / reopen instantly** | PWA app-shell precache + IndexedDB caches (history, media, names) |
+| Use it in **Spanish or English** | `react-i18next`, persisted toggle |
 
 ---
 
-## 🧩 Core Technologies
+## Domain model
 
-- **React** — UI rendering & hooks  
-- **Redux Toolkit** — global state & call state machine  
-- **WebSocket** — signaling & chat transport  
-- **WebRTC** — peer-to-peer media (video/audio)  
-- **STUN / TURN** — NAT traversal
+The core entities the whole app is organized around (`entities/*`, `features/*/model`):
 
----
-
-## 🔁 Call State Machine (Redux)
-
-Call flow is modeled as a **finite state machine** inside Redux.
-
-### Call States
-
-```ts
-// idle       // no active call
-// ringing    // incoming call, waiting for user action
-// calling    // outgoing call initiated
-// in_call    // WebRTC connection established
-
-idle
- ├── incomingOffer → ringing
- └── outgoingCall → calling
-
-ringing
- ├── acceptCall → in_call
- └── reject / remoteEnd → idle
-
-calling
- ├── incomingAnswer → in_call
- └── localEnd / remoteEnd → idle
-
-in_call
- └── localEnd / remoteEnd / disconnect → idle
-
-Redux is the single source of truth for: UI rendering, button availability, modal visibility, call permissions.
+```mermaid
+classDiagram
+  class Conversation {
+    conversationId
+    kind: direct | group
+    counterpartId / memberIds
+    blocked / blockedByMe / blockedByPeer
+  }
+  class Message {
+    id (server ULID) / clientId
+    conversationId
+    from / to / text
+    kind: text | attachment | event
+    meta: attachmentId, contentType, fileName
+    status: pending|sending|sent|failed
+    createdAt
+  }
+  class Call {
+    status: idle|ringing|calling|connecting|in_call
+    peerId / conversationId
+    audioOnly
+  }
+  class IdsUser {
+    id / display_name / email
+  }
+  class ReadWatermark {
+    peerLastReadId (ULID)
+  }
+  Conversation "1" --> "*" Message
+  Conversation "1" --> "1" ReadWatermark
+  Message "0..1" --> "1" IdsUser : from
+  Call --> Conversation : over
+  Conversation --> IdsUser : counterpart
 ```
 
-## 🔌 WebRTC Layer (useWebRTC)
-The useWebRTC hook is a low-level transport layer responsible only for: peer connection lifecycle, media stream handling, SDP (offer/answer), ICE candidate buffering, WebRTC connection state.
+- **Conversation** — a 1:1 pair or an N-member group. Empty conversations are hidden from the list until a
+  message revives them (the client keeps a *sticky* copy so a just-opened empty chat stays visible).
+- **Message** — text or an attachment (`meta` carries `attachmentId`/`contentType`/`fileName`); reconciled by
+  `id || clientId` so an optimistic echo and its server ACK collapse to one row.
+- **Call** — a WebRTC session; the signaling (`call:offer|answer|ice|end|ready`) rides opaquely inside the
+  backend's `SIGNAL_IN/OUT` frames, so the backend never parses it.
+- **Read state** — a per-side monotonic **ULID watermark** (`peerLastReadId`): my message shows ✓✓ ⇔
+  `msg.id <= peerLastReadId` (lexicographic = chronological).
 
-Important Design Rules
-✅ Does NOT read Redux call status
-✅ Does NOT control UI
-✅ Does NOT trust the UI or signaling layer
+---
 
-It uses internal guards based on RTCPeerConnection state, signalingState, internal refs (pcRef, remotePeerIdRef). This guarantees no double calls, no duplicate offers, safe reconnection, and idempotent cleanup.
+## Architecture — Feature-Sliced Design
 
-📡 WebSocket Signaling
-WebSocket is used for chat messages and call signaling events (call:offer, call:answer, call:ice, call:end). All incoming signaling messages are dispatched to Redux (for UI & state) and forwarded to useWebRTC only when valid.
+Layers with a strict **downward-only** dependency rule (a lower layer never imports an upper one):
 
-## 🎥 Media Streams
-Reactive streams are managed via React state:
-
-```ts
-const [localStream, setLocalStream] = useState(null);
-const [remoteStream, setRemoteStream] = useState(null);
-Streams are React state, so the UI automatically updates when the camera/microphone is ready or the remote peer connects.
+```mermaid
+graph TD
+  app --> pages --> features
+  features --> entities
+  features --> infrastructure
+  features --> shared
+  entities --> shared
+  infrastructure --> shared
+  store["store (composition root)"] --> features
 ```
 
-## 🧠 Defensive Programming
-The project handles edge cases: double incoming offers, offer while already in a call, late ICE candidates, answer after hang-up, network disconnects, peer crashes. Unsafe conditions are ignored or auto-rejected.
+| Layer | Role | e.g. |
+|---|---|---|
+| `app` | root shell, providers | `App`, error boundary |
+| `pages` | route composition | `Messenger` |
+| `features` | one user-facing capability each, self-contained | `chat`, `call`, `contacts`, `groups`, `presence`, `notifications`, `directory`, `auth` |
+| `entities` | cross-feature domain types + mappers | `conversation`, `contact` |
+| `infrastructure` | generic transport, no domain knowledge | WebSocket middleware, `frameBridge` |
+| `shared` | pure utils, config, UI atoms, sound | `config/*`, `sound/notify`, `ulid` |
+| `store` | the composition root (wires it all) | `store.ts`, `logout.ts` |
 
-## 🖥️ UI Components
-ChatList — contacts, unread counters, search
+**Sources of truth (deliberately several, each owned by one place):** chat list = RTK Query `getChats`;
+history = `getChatHistory`; unread = `chatUi` slice; presence = `presence` slice; calls = a singleton
+`webRTCService` + `call` slice; the outbox = `outbox` slice + IndexedDB. Incoming WS frames are routed
+per-frame in feature middleware — never through a single "last message" slot.
 
-ChatWindow — messages, send/delete, start call
+---
 
-VideoCall — incoming call modal, video streams, hang up
+## How the hard parts work
 
-ConfirmModal — reusable confirmation UI
+- **Sending** — a message is enqueued in the outbox and echoed optimistically; the WS `CHAT_ACK` marks it
+  sent (no history refetch — the row is reconciled in place). Resends are **epoch-guarded** (at most once per
+  reconnect) because the server re-mints ids, so a naive resend would duplicate.
+- **Calls, closed-app answer** — the push is only a *nudge* (no SDP). The callee opens, sends `call:ready`
+  once its socket is up, the still-ringing caller re-offers with an **ICE restart** (its first candidates were
+  emitted while the callee was offline), and both converge. The state machine never sends `call:end` to the
+  peer it is answering, and carries the **conversationId from the offer itself** so you can answer a caller you
+  have no listed chat with.
+- **Attachments** — two-phase presigned MinIO (`upload-url` → PUT → confirm); the URL host is the public edge
+  so the browser can reach it same-origin (no CORS). Bytes are fetched into a Blob and cached, so an expiring
+  presigned URL can never blank a shown attachment.
 
-## 🔐 TURN / STUN Configuration
+---
 
-```ts
-const ICE_SERVERS = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "turn:<HOST>:3478", username: "user", credential: "pass" }
-  ]
-};
-```
+## Supporting functions
 
-## 🧪 Key Principles Used
-Separation of concerns, finite state machines, reactive UI, idempotent cleanup, race-condition safety, WebRTC best practices.
+- **Notifications — one arbiter, two channels.** In-app (live WS → `postMessage`) and offline (**Web Push**)
+  both converge in the Service Worker, which dedups by message id and names the sender/caller from a
+  persistent cache. Calls are exempt from dedup + foreground-suppression (a call must always ring).
+- **Caches (all IndexedDB, best-effort):**
+  - `hormiga-msg-db` (v5) — **media blob cache**: images/voice/video keyed by `attachmentId`, byte-bounded
+    with oldest-first eviction; also the **history** cache for instant/offline chat open.
+  - `hormiga-names` — **directory name cache**: `id→name`, written as the address book resolves, read by both
+    the app (read-through seed on cold start) **and** the Service Worker (to name Web Push offline).
+  - `hormiga-push-dedup` — cross-channel notification dedup (survives restarts).
+- **Offline / PWA** — `vite-plugin-pwa` precaches the app shell; a controller-change auto-reload untraps stale
+  Service Workers after a deploy.
+- **i18n** — every visible string via `react-i18next` (ES/EN, persisted).
+- **Security (E2EE hardening, phase 0 shipped)** — strict enforcing CSP with a runtime-hashed inline script,
+  pinned dependencies (`npm ci`); closed-chat E2EE (static ECDH → HKDF → AES-GCM) is implemented and inert on a
+  branch, waiting on a backend key directory.
 
-### 🚀 Possible Extensions
-Group calls
+---
 
-Screen sharing
+## Tech stack
 
-Call reconnection
+**Client:** React 19 · Redux Toolkit + RTK Query · React Router 7 · react-i18next · `idb` (IndexedDB) · Zod ·
+Vite 7 + `vite-plugin-pwa` · WebRTC · Web Push. **Auth:** Ory **Kratos** (session cookie, via the Ory edge).
+**Backend (separate services):** Quarkus messenger (WebSocket + REST) · Kafka · MinIO (attachments) ·
+PostgreSQL · the **IDS** identity directory (KratosGate) — all behind the Ory/nginx edge.
 
-Call duration tracking
+---
 
-Push notifications — _implemented_ (Web Push via hormiga-webpush; pending only the backend
-`chat.offline.notify` producer, see the integration section above)
+## Statistics
 
-End-to-end encryption
+| Metric | Value |
+|---|---|
+| Source files (TS/TSX, excl. tests) | **125** (~**9,550** LOC) |
+| Test files / tests | **53 / 319** (Vitest + Testing Library, jsdom, fake-indexeddb) |
+| FSD layer spread | features 93 · shared 15 · entities 5 · infrastructure 5 · store 2 · app/pages 2 |
+| Shipped JS (gzip) | **~210 KB** total — React ~120 KB · app ~38 KB · Ory ~22 KB · messenger route ~19 KB · webp-WASM ~15 KB |
+| Route-level code splitting | yes (React.lazy per page) |
 
-### 📌 Summary
-This project is not just a chat app — it is a reference architecture for building reliable real-time applications with React, Redux, WebSocket, and WebRTC. If you understand this codebase, you understand how to build production-grade real-time systems.
+### Cache & capture configuration (`shared/config/*`)
 
-Happy hacking 🚀
+| Setting | Value | Purpose |
+|---|---|---|
+| `ATTACHMENT_CACHE_MAX_BYTES` | 80 MB | media blob cache budget (oldest-first eviction) |
+| `MAX_ATTACHMENT_BYTES` | 25 MB | upload size cap |
+| `IMAGE_MAX_DIMENSION` / `IMAGE_QUALITY` | 1200 px / 0.8 | client image downscale→WebP before upload |
+| `THUMB_MAX_DIMENSION` / `THUMB_QUALITY` | 320 px / 0.6 | cached inline thumbnails/posters |
+| `VIDEO_CAPTURE_MAX_DIMENSION` / `_FRAME_RATE` | 1280 px / 24 fps | recording caps |
+| `VIDEO_CAPTURE_BITS_PER_SECOND` / `_MAX_BYTES` | 1.2 Mbps / 22 MB | recording bitrate + auto-stop size |
+| `VIDEO_MAX_DURATION_MS` / `VOICE_MAX_DURATION_MS` | 60 s / 3 min | recording length caps |
+| `AUDIO_PLAYBACK_GAIN` | 2.5× | voice-note playback boost |
+| `HISTORY_PAGE_SIZE` / `MESSAGE_WINDOW_*` | 200 / 60 | history paging + DOM windowing |
+| `CALL_TIMEOUT_MS` | 60 s | outgoing-call ring window |
+| `OUTBOX_*` | 6 attempts / 20 s ack / 3 s tick | duplicate-safe, epoch-guarded resend |
+
+---
+
+## Build & deploy
+
+Node 22 assumed (`node_modules` not committed). `npm ci && npx vite build --base=/messenger-ui/` produces
+`dist/`, served by a zero-dependency static server (`front/server.mjs`, which sets the enforcing CSP + cache
+headers). Deploy builds the container **on the host** (`front/Dockerfile`, `npm ci` + Vite) via `deploy.sh`,
+which verifies the edge returns 200. Full test gate: `npx vitest run`.
+
+---
+
+## License
+
+**PolyForm Noncommercial License 1.0.0** — see [LICENSE](./LICENSE). Free to use, modify and share for
+**noncommercial** purposes. **Commercial use requires a separate agreement with the author.**
