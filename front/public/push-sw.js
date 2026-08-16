@@ -157,11 +157,17 @@ self.addEventListener("push", (event) => {
     let payload = {};
     try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
     event.waitUntil((async () => {
-        // Suppress the system notification while the app is in the FOREGROUND — the user is looking at
-        // it and the message already shows in-app; a Web Push banner would be redundant/annoying (this
-        // happens when a push is delivered/redelivered just as the user returns to the app). We do NOT
-        // claim dedup here, so a later background redelivery still notifies if it was never seen.
-        if (await appInForeground()) return;
+        // A CALL push is time-critical and must NEVER be suppressed by the foreground heuristic: a
+        // backgrounded mobile PWA can falsely report visible/focused (the phantom-online case), which
+        // ate the only ring on some incoming calls ("приходят через раз"). If the app is TRULY in the
+        // foreground the in-app ringing (WS call:offer) already fires, so a redundant banner is harmless.
+        const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+        if (data.kind !== "call") {
+            // Messages: still suppress in the foreground — the user sees them in-app and a banner would
+            // be redundant/annoying. We do NOT claim dedup here, so a later background redelivery still
+            // notifies if it was never seen.
+            if (await appInForeground()) return;
+        }
         await showChatNotification(payload);
     })());
 });

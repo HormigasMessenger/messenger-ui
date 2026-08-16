@@ -1,6 +1,7 @@
 import type {Middleware, PayloadAction} from "@reduxjs/toolkit";
 import type {IncomingWebRTCMessage} from "@/features/call/model/types.ts";
 import {
+    acceptCall,
     incomingAnswer,
     incomingOffer,
     incomingRemoteEnd,
@@ -33,11 +34,24 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
             if (typeof msg?.type === "string" && msg.type.startsWith("call:")) {
                 switch (msg.type) {
                     case "call:offer": {
-                        // Guard against glare / a stray second caller: only a truly idle client may
-                        // start ringing. If we're already calling/ringing/connecting/in a call, decline
-                        // the new offer (tell just that caller) instead of clobbering the active call's
-                        // peerId/status. declineOffer does NOT touch our live pc/streams.
-                        if ((getState() as RootState).call.status !== "idle") {
+                        const cs = (getState() as RootState).call;
+                        // GLARE / push-answer: the peer we're currently CALLING is calling US back. They
+                        // were offline, got the call push, opened the app and re-initiated (see
+                        // parseCallDeepLink). Resolve in their favor — drop our own outgoing attempt
+                        // WITHOUT signaling (endRemote, NOT hangUp: a call:end would cancel THEIR call),
+                        // then answer their offer. Both sides converge into one connected call.
+                        if (cs.status === "calling" && msg.from === cs.peerId) {
+                            webRTCService.endRemote();
+                            dispatch(acceptCall());   // calling → connecting
+                            webRTCService.handleOffer({from: msg.from, offer: msg.offer, media: msg.media})
+                                .catch((err) => { exceptionHandler(err); dispatch(localEnd()); });
+                            break;
+                        }
+                        // Otherwise only a truly idle client may start ringing. If we're already
+                        // ringing/connecting/in a call (or a STRAY third party offers mid-call), decline
+                        // that caller instead of clobbering the active call. declineOffer does NOT touch
+                        // our live pc/streams.
+                        if (cs.status !== "idle") {
                             webRTCService.declineOffer(msg.from);
                             break;
                         }
