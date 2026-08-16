@@ -34,6 +34,7 @@ export function AttachmentVideo({
     const playbackErrors = useRef(0);
     const posterDone = useRef(false);          // generate/attach the poster at most once
     const posterUrlRef = useRef<string | null>(null); // live poster objectURL, for revoke
+    const videoRef = useRef<HTMLVideoElement | null>(null);
 
     const [prevId, setPrevId] = useState(attachmentId);
     if (attachmentId !== prevId) {
@@ -126,6 +127,21 @@ export function AttachmentVideo({
         }
     };
 
+    // Pause the video whenever it's not actually on screen. The chat panel is HIDDEN via CSS (display:none),
+    // not unmounted — so a playing clip would otherwise keep running in the background and appear to
+    // "auto-play" when you return to the chat. IntersectionObserver reports display:none AND scroll-away as
+    // not-intersecting; we only pause (keep position + controls), never auto-resume.
+    useEffect(() => {
+        if (!playing) return;
+        const el = videoRef.current;
+        if (!el || typeof IntersectionObserver === "undefined") return;
+        const io = new IntersectionObserver((entries) => {
+            for (const e of entries) if (!e.isIntersecting && !el.paused) el.pause();
+        }, {threshold: 0});
+        io.observe(el);
+        return () => io.disconnect();
+    }, [playing]);
+
     const retry = () => { setFailed(false); setUrl(null); setAttempt((a) => a + 1); };
     const onVideoError = () => {
         if (playbackErrors.current < 2) { playbackErrors.current += 1; retry(); } // maybe an expired URL
@@ -166,6 +182,7 @@ export function AttachmentVideo({
     if (!url) return <span className="opacity-60 text-xs">🎬 {t("chat.video")}…</span>;
     return (
         <video
+            ref={videoRef}
             controls
             autoPlay
             preload="metadata"
