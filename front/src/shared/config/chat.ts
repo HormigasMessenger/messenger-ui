@@ -44,3 +44,8 @@ export const VIDEO_CAPTURE_MAX_DIMENSION = 1280; // px, cap on BOTH axes → ~72
 export const VIDEO_CAPTURE_FRAME_RATE = 24;
 export const VIDEO_CAPTURE_BITS_PER_SECOND = 1_200_000;  // ~1.2 Mbps video
 export const VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND = 64_000; // 64 kbps audio
+// Hard byte budget enforced DURING recording (auto-stop). Some devices/codecs ignore the bitrate hint
+// above and record much larger, so the duration cap alone doesn't bound the file — this guarantees the
+// clip never exceeds the send limit (MAX_ATTACHMENT_BYTES) and gets rejected AT send. Kept comfortably
+// under 25MB. Requires the recorder to emit timeslice chunks so size can be tracked live.
+export const VIDEO_CAPTURE_MAX_BYTES = 22 * 1024 * 1024; // 22 MB (safely under the 25MB send cap)

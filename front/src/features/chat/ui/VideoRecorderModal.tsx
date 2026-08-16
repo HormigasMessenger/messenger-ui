@@ -1,7 +1,7 @@
 import {useCallback, useEffect, useRef} from "react";
 import {useTranslation} from "react-i18next";
 import {useVideoRecorder} from "@/features/chat/hooks/useVideoRecorder.ts";
-import {VIDEO_MAX_DURATION_MS} from "@/shared/config/chat.ts";
+import {VIDEO_MAX_DURATION_MS, VIDEO_CAPTURE_MAX_BYTES} from "@/shared/config/chat.ts";
 
 function formatMs(ms: number): string {
     const s = Math.floor(ms / 1000);
@@ -15,7 +15,7 @@ function formatMs(ms: number): string {
  */
 export function VideoRecorderModal({onSend, onClose}: {onSend: (file: File) => void; onClose: () => void}) {
     const {t} = useTranslation();
-    const {stream, recording, elapsedMs, open, start, stop, close} = useVideoRecorder();
+    const {stream, recording, elapsedMs, bytes, open, start, stop, close} = useVideoRecorder();
     const videoRef = useRef<HTMLVideoElement>(null);
 
     // Acquire the camera on mount; if it fails (permission/denied) the hook toasts — close the modal.
@@ -37,10 +37,11 @@ export function VideoRecorderModal({onSend, onClose}: {onSend: (file: File) => v
         onClose();
     }, [stop, close, onSend, onClose]);
 
-    // Auto-stop + send at the max length.
+    // Auto-stop + send at the max length OR the size budget (whichever first) — so a recorded clip can
+    // never exceed the send limit and get rejected AT send (some devices ignore the bitrate cap).
     useEffect(() => {
-        if (recording && elapsedMs >= VIDEO_MAX_DURATION_MS) void finish();
-    }, [recording, elapsedMs, finish]);
+        if (recording && (elapsedMs >= VIDEO_MAX_DURATION_MS || bytes >= VIDEO_CAPTURE_MAX_BYTES)) void finish();
+    }, [recording, elapsedMs, bytes, finish]);
 
     return (
         <div className="fixed inset-0 z-[70] bg-black flex flex-col">

@@ -165,18 +165,20 @@ function ChatWindow({
     // (e.g. images gaining height) so the view doesn't drift off the bottom right after opening.
     useLayoutEffect(() => {
         if (!pendingBottomRef.current || shown.length === 0) return;
-        const el = listRef.current;
-        if (!el) return;
-        el.scrollTop = el.scrollHeight;
-        atBottomRef.current = true;
-        // NOTE: pendingBottomRef stays TRUE until the user scrolls up (see onListScroll). Attachments
-        // (images fetch→blob, video posters) gain height AFTER this first landing, and the ResizeObserver
-        // below re-pins to bottom while pendingBottomRef holds — so a chat with media still opens at the
-        // newest message instead of stranding mid-list once the media finishes loading.
-        requestAnimationFrame(() => {
-            const e2 = listRef.current;
-            if (e2 && atBottomRef.current) e2.scrollTop = e2.scrollHeight;
-        });
+        // Re-pin to the newest message across a short post-open window. A single scrollTop assignment is
+        // not enough: posters/images, fonts and late reflow change the content height AFTER the first
+        // paint, and (device-dependent) neither the ResizeObserver nor a lone rAF always catches it — so
+        // the view strands mid-list ("chat doesn't scroll to the bottom on open"). Each pin is guarded by
+        // pendingBottomRef, which onListScroll clears the instant the user scrolls up — so this never
+        // fights someone reading history. Instant (scrollTop), never a smooth animation a re-render breaks.
+        const pin = () => {
+            const e = listRef.current;
+            if (e && pendingBottomRef.current) { e.scrollTop = e.scrollHeight; atBottomRef.current = true; }
+        };
+        pin();
+        const raf = requestAnimationFrame(pin);
+        const timers = [150, 400, 800].map((ms) => setTimeout(pin, ms));
+        return () => { cancelAnimationFrame(raf); timers.forEach(clearTimeout); };
     }, [selectedChatId, shown.length]);
 
     // Keep the view pinned to the newest message while we're at the bottom, even as content grows
