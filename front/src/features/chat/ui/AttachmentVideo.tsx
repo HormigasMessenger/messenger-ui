@@ -3,6 +3,7 @@ import {useTranslation} from "react-i18next";
 import {useSelector} from "react-redux";
 import type {RootState} from "@/store/store";
 import {loadAttachmentBlob, saveAttachmentBlob} from "@/features/chat/db/db.ts";
+import {videoPosterBlob} from "@/features/chat/lib/videoPoster.ts";
 import {targetDimensions} from "@/features/chat/lib/imageCompress.ts";
 import {THUMB_MAX_DIMENSION, THUMB_QUALITY} from "@/shared/config/chat.ts";
 
@@ -37,6 +38,8 @@ export function AttachmentVideo({
     const posterDone = useRef(false);          // generate/attach the poster at most once
     const posterUrlRef = useRef<string | null>(null); // live poster objectURL, for revoke
     const videoRef = useRef<HTMLVideoElement | null>(null);
+    const rootRef = useRef<HTMLButtonElement | null>(null);   // the poster button, for the visibility observer
+    const posterGenRef = useRef(false);                        // receiver-side poster generated at most once
 
     const [prevId, setPrevId] = useState(attachmentId);
     if (attachmentId !== prevId) {
@@ -72,6 +75,7 @@ export function AttachmentVideo({
     useEffect(() => {
         let alive = true;
         posterDone.current = false;   // reset per attachment (kept out of render — ref writes there are illegal)
+        posterGenRef.current = false;
         let tries = 0;
         const MAX = 6;
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,6 +94,43 @@ export function AttachmentVideo({
         tryLoad();
         return () => { alive = false; if (timer) clearTimeout(timer); };
     }, [attachmentId, applyPoster]);
+
+    // RECEIVER-side poster: the send-time poster is cached only on the SENDER's device, so a received
+    // video shows a black placeholder until it's played. When the bubble scrolls INTO VIEW (and we still
+    // have no poster), fetch the clip once in the background, extract a first frame, cache it — so the
+    // receiver sees a real thumbnail without having to play. Gated on visibility so off-screen videos and
+    // fast scroll-bys don't download; runs at most once per attachment (cached forever after).
+    useEffect(() => {
+        if (poster || playing || posterGenRef.current || typeof IntersectionObserver === "undefined") return;
+        const el = rootRef.current;
+        if (!el) return;
+        const io = new IntersectionObserver((entries) => {
+            if (posterGenRef.current || !entries.some((e) => e.isIntersecting)) return;
+            posterGenRef.current = true;
+            io.disconnect();
+            void (async () => {
+                try {
+                    const u = await resolveUrl?.(attachmentId);
+                    if (!u) return;
+                    const resp = await fetch(u);
+                    if (!resp.ok) return;
+                    const p = await videoPosterBlob(await resp.blob());
+                    if (p) { void saveAttachmentBlob(attachmentId, p).catch(() => {}); posterDone.current = true; applyPoster(p); }
+                } catch { /* best-effort; falls back to on-play generation */ }
+            })();
+        }, {threshold: 0.1});
+        io.observe(el);
+        return () => io.disconnect();
+    }, [poster, playing, attachmentId, resolveUrl, applyPoster]);
+
+    // Pause the clip when the TAB/app is backgrounded (not just when navigating chats) — otherwise a
+    // playing video keeps running its audio in the background. Resets to the poster so re-entry is calm.
+    useEffect(() => {
+        if (!playing) return;
+        const onHide = () => { if (document.hidden) { try { videoRef.current?.pause(); } catch { /* ignore */ } } };
+        document.addEventListener("visibilitychange", onHide);
+        return () => document.removeEventListener("visibilitychange", onHide);
+    }, [playing]);
 
     // Resolve the presigned URL — ONLY after the user asks to play (deferred so a chat open doesn't hit the
     // backend for every video). Retried for a just-uploaded object.
@@ -183,6 +224,7 @@ export function AttachmentVideo({
     if (!playing) {
         return (
             <button
+                ref={rootRef}
                 type="button"
                 onClick={() => setPlaying(true)}
                 className="relative block max-w-[240px] max-h-[240px] rounded-md bg-black overflow-hidden"

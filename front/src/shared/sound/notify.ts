@@ -19,6 +19,16 @@ function audioCtx(): AudioContext | null {
     }
 }
 
+/**
+ * The shared AudioContext, so other audio (e.g. the voice-note playback gain boost) reuses the ONE
+ * context that unlockAudio() already resumes on the first user gesture — instead of spinning up a fresh
+ * suspended context per element, which made the FIRST play silent (context not yet running). Returns null
+ * if WebAudio is unavailable.
+ */
+export function getSharedAudioContext(): AudioContext | null {
+    return audioCtx();
+}
+
 /** Short two-tone blip via WebAudio (no media asset needed). */
 export function playNotificationSound() {
     const ac = audioCtx();

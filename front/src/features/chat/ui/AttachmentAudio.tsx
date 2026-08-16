@@ -1,8 +1,9 @@
-import {useEffect, useRef, type SyntheticEvent} from "react";
+import {useRef, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
 import {useAttachmentObjectUrl} from "@/features/chat/lib/useAttachmentObjectUrl.ts";
 import {loadAttachmentBlob, saveAttachmentBlob, deleteAttachmentBlob} from "@/features/chat/db/db.ts";
 import {AUDIO_PLAYBACK_GAIN} from "@/shared/config/chat.ts";
+import {getSharedAudioContext} from "@/shared/sound/notify.ts";
 
 /**
  * Inline player for an audio attachment (voice message). Uses the shared useAttachmentObjectUrl layer:
@@ -27,30 +28,36 @@ export function AttachmentAudio({
         load: loadAttachmentBlob, save: saveAttachmentBlob, invalidate: deleteAttachmentBlob,
     });
     const durationFixed = useRef(false);
-    const boostRef = useRef<AudioContext | null>(null);
+    const wiredRef = useRef(false);
 
-    // Boost quiet voice notes on playback. A web app can't raise the device's MEDIA volume, but routing
-    // the <audio> through a WebAudio GainNode (>1) makes it audible at a lower system volume. Wired on the
-    // first play (a user gesture → the AudioContext is allowed to run). Best-effort: any failure leaves the
-    // element playing natively. Once a MediaElementSource is created the audio flows through the graph, so
-    // we only build it once and just resume() on subsequent plays.
+    // Boost quiet voice notes on playback via a WebAudio GainNode (a web app can't raise the device MEDIA
+    // volume, but it can make the note audible at a lower one). Reuse the SHARED AudioContext — the one
+    // unlockAudio() already resumed on the app's first gesture — instead of a fresh per-element context,
+    // which started suspended and made the FIRST play SILENT (only the 2nd had sound). Wire the element
+    // through the graph once; if the shared context is somehow still suspended, resume + re-play so the
+    // first play isn't lost. Best-effort: any failure leaves the element playing natively (unboosted).
     const onPlay = (e: SyntheticEvent<HTMLAudioElement>) => {
         const a = e.currentTarget;
         a.volume = 1;
-        if (boostRef.current) { void boostRef.current.resume?.(); return; }
+        const ac = getSharedAudioContext();
+        if (!ac) return;
         try {
-            const Ctx = window.AudioContext || (window as unknown as {webkitAudioContext?: typeof AudioContext}).webkitAudioContext;
-            if (!Ctx) return;
-            const ctx = new Ctx();
-            const src = ctx.createMediaElementSource(a);
-            const gain = ctx.createGain();
-            gain.gain.value = AUDIO_PLAYBACK_GAIN;
-            src.connect(gain).connect(ctx.destination);
-            void ctx.resume?.();
-            boostRef.current = ctx;
-        } catch { /* WebAudio unavailable/blocked → native element playback */ }
+            if (!wiredRef.current) {
+                const src = ac.createMediaElementSource(a);
+                const gain = ac.createGain();
+                gain.gain.value = AUDIO_PLAYBACK_GAIN;
+                src.connect(gain).connect(ac.destination);
+                wiredRef.current = true;
+            }
+            if (ac.state === "suspended") {
+                // Not unlocked yet → the running graph won't output until resumed; re-play so the first
+                // play has sound rather than being swallowed while the context spins up.
+                a.pause();
+                ac.resume().finally(() => { void a.play().catch(() => {}); });
+            }
+        } catch { /* WebAudio blocked → native element playback */ }
     };
-    useEffect(() => () => { try { void boostRef.current?.close(); } catch { /* ignore */ } }, []);
+    // Do NOT close the shared context on unmount — it's shared with the blip/ringtone.
 
     // MediaRecorder webm has no Duration in its header → the <audio> reports duration=Infinity and the
     // seek bar / total time are broken. Force a real duration: seek to the end once (the blob is local
