@@ -107,15 +107,20 @@ export function showDesktopNotification(title: string, body: string, conversatio
  * SW exempts calls from message dedup. notificationclick deep-links ?call=&caller=&media= to the answer
  * flow (harmless if the ringing dialog is already in memory — answerViaPush no-ops while ringing).
  */
-export function showCallNotification(opts: {conversationId?: string; callerId: string; media?: "audio" | "video"}) {
+export function showCallNotification(opts: {conversationId?: string; callerId: string; media?: "audio" | "video"; title?: string; body?: string}) {
     try {
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         const base = import.meta.env.BASE_URL;
         const qs = opts.conversationId
             ? `?call=${encodeURIComponent(opts.conversationId)}&caller=${encodeURIComponent(opts.callerId)}${opts.media ? `&media=${opts.media}` : ""}`
             : "";
+        // Caller passes LOCALIZED title/body (it knows the i18n language); fall back to English defaults if
+        // absent so the notification always has text.
+        const title = opts.title || "Incoming call";
+        const body = opts.body || "is calling you…";
         const payload = {
-            // title/body omitted → the SW supplies the call defaults ("Incoming call" / "is calling you…").
+            title,
+            body,
             tag: "call:" + (opts.conversationId || "chat"),
             data: {
                 kind: "call",
@@ -130,12 +135,12 @@ export function showCallNotification(opts: {conversationId?: string; callerId: s
                 .then((reg) => {
                     const sw = reg.active;
                     if (sw) sw.postMessage({type: "show-notification", payload});
-                    else reg.showNotification("Incoming call", buildFallbackOptions(base, "is calling you…", payload)).catch(() => {});
+                    else reg.showNotification(title, buildFallbackOptions(base, body, payload)).catch(() => {});
                 })
-                .catch(() => { try { new Notification("Incoming call", buildFallbackOptions(base, "is calling you…", payload)); } catch { /* ignore */ } });
+                .catch(() => { try { new Notification(title, buildFallbackOptions(base, body, payload)); } catch { /* ignore */ } });
             return;
         }
-        new Notification("Incoming call", buildFallbackOptions(base, "is calling you…", payload));
+        new Notification(title, buildFallbackOptions(base, body, payload));
     } catch { /* ignore */ }
 }
 

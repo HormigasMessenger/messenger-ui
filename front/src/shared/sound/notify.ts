@@ -76,8 +76,8 @@ function ringBurst() {
         osc.type = "sine";
         osc.frequency.setValueAtTime(480, t);
         gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
-        gain.gain.setValueAtTime(0.22, t + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.6, t + 0.02);
+        gain.gain.setValueAtTime(0.6, t + 0.3);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.36);
         osc.connect(gain).connect(ac.destination);
         osc.start(t);

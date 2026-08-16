@@ -19,6 +19,30 @@ import i18n from "@/shared/i18n";
 
 const exceptionHandler = (ex: Error) => logger.error(ex.message, ex);
 
+/**
+ * Best-effort caller display name for the incoming-call notification, read from whatever the IDS
+ * directory has already cached (idsApi getIdsUsersByIds → Record<id, user>). FULLY defensive: any shape
+ * mismatch / missing cache / not-yet-loaded directory returns undefined → the notification falls back to
+ * a generic localized title. Never throws.
+ */
+function resolveCallerName(state: unknown, id: string): string | undefined {
+    try {
+        const queries = (state as { idsApi?: { queries?: Record<string, { data?: unknown }> } })?.idsApi?.queries;
+        if (!queries) return undefined;
+        for (const key of Object.keys(queries)) {
+            const data = queries[key]?.data;
+            if (!data || typeof data !== "object" || Array.isArray(data)) continue;
+            const u = (data as Record<string, { display_name?: string; first_name?: string; last_name?: string; email?: string }>)[id];
+            if (!u) continue;
+            const name = (u.display_name?.trim())
+                || [u.first_name, u.last_name].filter(Boolean).join(" ").trim()
+                || u.email;
+            if (name) return name;
+        }
+    } catch { /* ignore — generic title */ }
+    return undefined;
+}
+
 export const createCallMiddleware = (webRTCService: WebRTCService): Middleware => {
     return (store) => (next) => (action) => {
         const {dispatch, getState} = store;
@@ -80,10 +104,13 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                         // post a LOCAL call notification (mirrors the message online-channel). When the tab
                         // is visible the in-app dialog + ringtone already alert, so skip it there.
                         if (typeof document !== "undefined" && document.hidden) {
+                            const name = resolveCallerName(getState(), msg.from);   // best-effort; undefined = generic
                             showCallNotification({
                                 conversationId: selectCallConversationId(getState() as RootState, msg.from),
                                 callerId: msg.from,
                                 media: msg.media,
+                                title: name ? name : i18n.t("call.incoming"),
+                                body: name ? i18n.t("call.incoming") : "",
                             });
                         }
                         break;
