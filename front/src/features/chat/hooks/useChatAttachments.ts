@@ -5,6 +5,8 @@ import {useTranslation} from "react-i18next";
 import {logger} from "@/shared/logger/logger.ts";
 import {MAX_ATTACHMENT_BYTES, IMAGE_MAX_DIMENSION, IMAGE_QUALITY, IMAGE_COMPRESS_MIN_BYTES} from "@/shared/config/chat.ts";
 import {compressImage} from "@/features/chat/lib/imageCompress.ts";
+import {videoPosterBlob} from "@/features/chat/lib/videoPoster.ts";
+import {saveAttachmentBlob} from "@/features/chat/db/db.ts";
 import {
     useAttachmentUploadUrlMutation,
     useAttachmentConfirmMutation,
@@ -59,6 +61,13 @@ export function useChatAttachments(
                 xhr.send(file);
             });
             await confirmMut({chatId: selectedChatId, attachmentId: up.attachmentId}).unwrap();
+            // Cache a first-frame poster from the LOCAL blob so the sender's just-sent video shows a real
+            // thumbnail immediately (not a black 🎬 placeholder). Best-effort, off the send path.
+            if (contentType.startsWith("video/")) {
+                videoPosterBlob(file)
+                    .then((poster) => { if (poster) return saveAttachmentBlob(up.attachmentId, poster); })
+                    .catch(() => { /* best-effort poster */ });
+            }
             reloadChatHistory().catch(() => {});
             toast.success(t("chat.fileSent"));
         } catch (e) {
