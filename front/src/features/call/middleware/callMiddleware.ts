@@ -83,7 +83,10 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                         if (typeof document !== "undefined" && document.hidden) {
                             const name = selectUserName(getState(), msg.from);   // best-effort; undefined = generic
                             showCallNotification({
-                                conversationId: selectCallConversationId(getState() as RootState, msg.from),
+                                // Prefer the conversationId the OFFER carried over the chat directory:
+                                // a caller you have no listed chat with isn't in the directory, so without
+                                // this the notification had no ?call= → tapping it couldn't answer ("ничего").
+                                conversationId: msg.conversationId ?? selectCallConversationId(getState() as RootState, msg.from),
                                 callerId: msg.from,
                                 media: msg.media,
                                 title: name ? name : i18n.t("call.incoming"),
