@@ -69,7 +69,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                         // already given up (idle), ignore — their glare-callback fallback rings us instead.
                         const cs = (getState() as RootState).call;
                         if (cs.status === "calling" && msg.from === cs.peerId) {
-                            webRTCService.resendOffer();
+                            webRTCService.resendOffer().catch(exceptionHandler);
                         }
                         break;
                     }

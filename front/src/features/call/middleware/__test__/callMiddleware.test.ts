@@ -62,7 +62,7 @@ describe("callMiddleware", () => {
             endRemote: vi.fn(),
             declineOffer: vi.fn(),
             rejectCall: vi.fn(),
-            resendOffer: vi.fn(() => true),
+            resendOffer: vi.fn(() => Promise.resolve(true)),
             signalReady: vi.fn(),
             getConnectionState: vi.fn(() => null),
         } as unknown as WebRTCService;

@@ -194,13 +194,17 @@ export class WebRTCService {
     }
 
     /* ======================
-       Re-send the current offer to the peer we're calling. Used when the callee was offline, got the
-       call push, opened the app and signalled call:ready — we re-emit the SAME offer so THEY receive a
-       normal incoming call (real Accept/Decline dialog). No-op if we're not mid-call (offer gone).
+       Re-offer to the peer we're calling after they came online (call:ready). Used when the callee was
+       offline, got the call push and opened the app. This MUST be an ICE RESTART, not a plain resend:
+       our original ICE candidates were emitted (onicecandidate) right after the first offer, while the
+       callee was still offline, so they're gone — the callee would get our SDP but NONE of our network
+       candidates and the connection would never form. createOffer({iceRestart:true}) re-gathers, and
+       onicecandidate re-fires the candidates, now delivered to the online callee. No-op if not mid-call.
     ====================== */
-    public resendOffer(): boolean {
-        const offer = this.pc?.localDescription;
-        if (!this.pc || !this.remotePeerId || !offer) return false;
+    public async resendOffer(): Promise<boolean> {
+        if (!this.pc || !this.remotePeerId) return false;
+        const offer = await this.pc.createOffer({iceRestart: true});
+        await this.pc.setLocalDescription(offer);
         this.send({
             type: "call:offer",
             to: this.remotePeerId,
