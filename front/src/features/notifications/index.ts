@@ -3,6 +3,7 @@
 export {ensurePushSubscription, removePushSubscription, pushSupported} from "./push.ts";
 export {
     showDesktopNotification,
+    showCallNotification,
     requestNotificationPermission,
     armNotificationPermissionOnGesture,
 } from "./desktopNotification.ts";

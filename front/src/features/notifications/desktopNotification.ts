@@ -98,6 +98,47 @@ export function showDesktopNotification(title: string, body: string, conversatio
     } catch { /* ignore */ }
 }
 
+/**
+ * Show a LOCAL notification for an INCOMING CALL when the app is alive (WebSocket up) but the tab is
+ * hidden/backgrounded — so we received the call:offer in-app but the user can't see the ringing dialog.
+ * This is the calls' equivalent of the message online-channel: the offline Web Push only fires when the
+ * BACKEND thinks the callee is offline, so an online-but-backgrounded callee got NO alert. Routed through
+ * the SW (same arbiter); data.kind="call" makes it render with the Answer action + ringtone tag, and the
+ * SW exempts calls from message dedup. notificationclick deep-links ?call=&caller=&media= to the answer
+ * flow (harmless if the ringing dialog is already in memory — answerViaPush no-ops while ringing).
+ */
+export function showCallNotification(opts: {conversationId?: string; callerId: string; media?: "audio" | "video"}) {
+    try {
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        const base = import.meta.env.BASE_URL;
+        const qs = opts.conversationId
+            ? `?call=${encodeURIComponent(opts.conversationId)}&caller=${encodeURIComponent(opts.callerId)}${opts.media ? `&media=${opts.media}` : ""}`
+            : "";
+        const payload = {
+            // title/body omitted → the SW supplies the call defaults ("Incoming call" / "is calling you…").
+            tag: "call:" + (opts.conversationId || "chat"),
+            data: {
+                kind: "call",
+                conversationId: opts.conversationId,
+                senderId: opts.callerId,
+                media: opts.media,
+                url: `${base}${qs}`,
+            },
+        };
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.ready
+                .then((reg) => {
+                    const sw = reg.active;
+                    if (sw) sw.postMessage({type: "show-notification", payload});
+                    else reg.showNotification("Incoming call", buildFallbackOptions(base, "is calling you…", payload)).catch(() => {});
+                })
+                .catch(() => { try { new Notification("Incoming call", buildFallbackOptions(base, "is calling you…", payload)); } catch { /* ignore */ } });
+            return;
+        }
+        new Notification("Incoming call", buildFallbackOptions(base, "is calling you…", payload));
+    } catch { /* ignore */ }
+}
+
 function buildFallbackOptions(base: string, body: string, payload: {tag: string; data: unknown}): NotificationOptions {
     return {
         body,

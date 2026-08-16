@@ -13,6 +13,7 @@ import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
 import {selectCallConversationId} from "@/features/chat/model/directDirectory.ts";
+import {showCallNotification} from "@/features/notifications";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
@@ -73,6 +74,18 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                             break;
                         }
                         dispatch(incomingOffer(offer));
+                        // ONLINE-but-backgrounded: we got the offer over a live WS, but if the tab is
+                        // hidden the user can't see the ringing dialog. The offline Web Push only fires
+                        // when the BACKEND thinks we're offline, so this is the only alert in that gap —
+                        // post a LOCAL call notification (mirrors the message online-channel). When the tab
+                        // is visible the in-app dialog + ringtone already alert, so skip it there.
+                        if (typeof document !== "undefined" && document.hidden) {
+                            showCallNotification({
+                                conversationId: selectCallConversationId(getState() as RootState, msg.from),
+                                callerId: msg.from,
+                                media: msg.media,
+                            });
+                        }
                         break;
                     }
 

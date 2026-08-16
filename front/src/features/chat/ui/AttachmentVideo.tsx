@@ -1,5 +1,7 @@
 import {useCallback, useEffect, useRef, useState, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
+import {useSelector} from "react-redux";
+import type {RootState} from "@/store/store";
 import {loadAttachmentBlob, saveAttachmentBlob} from "@/features/chat/db/db.ts";
 import {targetDimensions} from "@/features/chat/lib/imageCompress.ts";
 import {THUMB_MAX_DIMENSION, THUMB_QUALITY} from "@/shared/config/chat.ts";
@@ -40,6 +42,18 @@ export function AttachmentVideo({
     if (attachmentId !== prevId) {
         setPrevId(attachmentId);
         setPlaying(false); setUrl(null); setPoster(null); setFailed(false);
+    }
+
+    // STOP the clip on ANY navigation. The chat panel is hidden via CSS (not unmounted) and an
+    // IntersectionObserver doesn't reliably fire for display:none, so a played video would keep running
+    // and appear to "auto-play" when you return. Keying off selectedChatId is the reliable signal: the
+    // moment the open chat changes (to another chat OR the list/home), reset playing → the <video>
+    // unmounts (stops) and re-entering shows the poster. A new message in the SAME chat doesn't change it.
+    const selectedChatId = useSelector((s: RootState) => s.chatUi.selectedChatId);
+    const [prevChat, setPrevChat] = useState(selectedChatId);
+    if (selectedChatId !== prevChat) {
+        setPrevChat(selectedChatId);
+        if (playing) setPlaying(false);
     }
 
     // Set the poster, revoking any previous objectURL first; revoke on unmount too. Stable callback (only
