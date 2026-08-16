@@ -72,12 +72,23 @@ export function AttachmentVideo({
     useEffect(() => {
         let alive = true;
         posterDone.current = false;   // reset per attachment (kept out of render — ref writes there are illegal)
-        loadAttachmentBlob(attachmentId).then((blob) => {
-            if (!alive || !blob) return;
-            posterDone.current = true;
-            applyPoster(blob);
-        }).catch(() => { /* no cached poster yet → generic placeholder until first play */ });
-        return () => { alive = false; };
+        let tries = 0;
+        const MAX = 6;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const tryLoad = () => {
+            loadAttachmentBlob(attachmentId).then((blob) => {
+                if (!alive) return;
+                if (blob) { posterDone.current = true; applyPoster(blob); return; }
+                // No cached poster YET. A just-SENT video generates its poster asynchronously (from the
+                // local blob, after upload confirms — see useChatAttachments), so it can land a second or
+                // two AFTER this bubble first renders. Retry briefly so the sender sees the thumbnail
+                // without having to play the clip first. Received videos (no sender poster) simply fall
+                // through to the placeholder after the retries — generated on their first play.
+                if (++tries < MAX) timer = setTimeout(tryLoad, 1200);
+            }).catch(() => { /* no cached poster yet */ });
+        };
+        tryLoad();
+        return () => { alive = false; if (timer) clearTimeout(timer); };
     }, [attachmentId, applyPoster]);
 
     // Resolve the presigned URL — ONLY after the user asks to play (deferred so a chat open doesn't hit the

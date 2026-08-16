@@ -91,6 +91,7 @@
     "micError": "Could not access the microphone",
     "voiceMessage": "Voice message",
     "video": "Video",
+    "attachment": "Attachment",
     "loadingImage": "loading…",
     "msgSendError": "Couldn't send — reopen the chat",
     "historyLoadError": "Couldn't load messages"

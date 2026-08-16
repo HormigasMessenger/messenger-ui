@@ -99,7 +99,12 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                 playNotificationSound();
                 // Pass the server message id so the SW arbiter can dedup this online notification
                 // against an offline Web Push for the SAME message (both carry the server ULID).
-                if (hidden) showDesktopNotification(i18n.t("chat.newMessage"), msg.text || "", chatId, msg.id);
+                // Body: a real text message, else a GENERIC "attachment" — never the file name (it's
+                // noise, and we can't name the sender anyway, so keep it to "new message" + text/attachment).
+                if (hidden) {
+                    const body = msg.kind === "attachment" ? i18n.t("chat.attachment") : (msg.text || "");
+                    showDesktopNotification(i18n.t("chat.newMessage"), body, chatId, msg.id);
+                }
             }
             break;
         }

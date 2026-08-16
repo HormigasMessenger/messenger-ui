@@ -49,3 +49,9 @@ export const VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND = 64_000; // 64 kbps audio
 // clip never exceeds the send limit (MAX_ATTACHMENT_BYTES) and gets rejected AT send. Kept comfortably
 // under 25MB. Requires the recorder to emit timeslice chunks so size can be tracked live.
 export const VIDEO_CAPTURE_MAX_BYTES = 22 * 1024 * 1024; // 22 MB (safely under the 25MB send cap)
+
+// Voice-note playback gain. MediaRecorder mic captures are often quiet, and mobile plays them on the
+// (frequently low) MEDIA volume stream — a web app CANNOT raise system volume, but it CAN boost playback
+// via a WebAudio GainNode so a voice note is audible at a lower system volume. >1 = louder; kept modest
+// to avoid harsh clipping. Best-effort: if WebAudio routing fails we fall back to plain element playback.
+export const AUDIO_PLAYBACK_GAIN = 2.5;
