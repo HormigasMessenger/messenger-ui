@@ -13,6 +13,10 @@ import {connected} from "@/infrastructure/slices/websocketSlice.ts";
 import { createCallMiddleware } from "../callMiddleware";
 import type { WebRTCService } from "@/features/call/service/webRTCService";
 import { chatApi } from "@/features/chat/rest/chatApi.ts";
+import { showCallNotification } from "@/features/notifications";
+
+// The call middleware posts a LOCAL call notification when an offer arrives while the tab is hidden.
+vi.mock("@/features/notifications", () => ({ showCallNotification: vi.fn() }));
 
 // A getState() that resolves the getChats cache so the outgoing-call conversation guard passes.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -141,6 +145,29 @@ describe("callMiddleware", () => {
         middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerR", offer: {} as RTCSessionDescriptionInit } });
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
         expect(webRTCService.handleOffer).not.toHaveBeenCalled();
+    });
+
+    it("ws/incoming: call:offer при СКРЫТОЙ вкладке → локальная нотификация звонка (онлайн-в-фоне)", () => {
+        vi.mocked(showCallNotification).mockClear();
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+        store.getState = vi.fn(() => ({
+            call: { status: "idle", peerId: null, incomingOfferData: null },
+            user: { id: "me" }, stickyChats: { byId: {} }, [chatApi.reducerPath]: { queries: {} },
+        }));
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", offer: {} as RTCSessionDescriptionInit, media: "audio" } });
+        expect(showCallNotification).toHaveBeenCalledWith(expect.objectContaining({ callerId: "peerN", media: "audio" }));
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+    });
+
+    it("ws/incoming: call:offer при ВИДИМОЙ вкладке → БЕЗ локальной нотификации (её даёт in-app диалог)", () => {
+        vi.mocked(showCallNotification).mockClear();
+        Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
+        store.getState = vi.fn(() => ({
+            call: { status: "idle", peerId: null, incomingOfferData: null },
+            user: { id: "me" }, stickyChats: { byId: {} }, [chatApi.reducerPath]: { queries: {} },
+        }));
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", offer: {} as RTCSessionDescriptionInit } });
+        expect(showCallNotification).not.toHaveBeenCalled();
     });
 
     it("ws/incoming: call:ready от абонента, которому мы звоним → пере-отправляем offer (resendOffer)", () => {
