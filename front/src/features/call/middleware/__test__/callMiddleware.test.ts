@@ -87,6 +87,16 @@ describe("callMiddleware", () => {
         );
     });
 
+    it("ws/incoming: call:offer протаскивает conversationId кадра в incomingOffer (ответ пиру без чата в списке)", () => {
+        // The frame's conversationId must reach the slice so our answer/end route back even when this peer
+        // isn't in the chat directory (empty conversations are hidden from /api/chats).
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peer1", offer: {} as RTCSessionDescriptionInit, conversationId: "conv-42" };
+        middleware(store)(next)({ type: "ws/incoming", payload: msg });
+        expect(store.dispatch).toHaveBeenCalledWith(
+            incomingOffer({ from: "peer1", offer: {} as RTCSessionDescriptionInit, media: undefined, conversationId: "conv-42" })
+        );
+    });
+
     it("ws/incoming: call:answer вызывает handleAnswer и диспатчит incomingAnswer (когда есть pc)", async () => {
         // We have a pending outgoing call → getConnectionState is truthy → transition to connecting.
         webRTCService.getConnectionState = vi.fn(() => "connecting" as RTCPeerConnectionState);

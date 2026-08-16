@@ -70,13 +70,16 @@ function cachedName(id) {
         req.onupgradeneeded = () => { try { const db = req.result; if (!db.objectStoreNames.contains("names")) db.createObjectStore("names"); } catch { /* ignore */ } };
         req.onerror = () => resolve(null);
         req.onsuccess = () => {
+            const db = req.result;
+            // Close after the read so we don't leak a connection per notification, and so a future app-side
+            // version bump of this DB isn't blocked by a lingering open handle in the SW.
+            const done = (v) => { try { db.close(); } catch { /* ignore */ } resolve(v); };
             try {
-                const db = req.result;
-                if (!db.objectStoreNames.contains("names")) { resolve(null); return; }
+                if (!db.objectStoreNames.contains("names")) { done(null); return; }
                 const g = db.transaction("names").objectStore("names").get(id);
-                g.onsuccess = () => resolve(g.result || null);
-                g.onerror = () => resolve(null);
-            } catch { resolve(null); }
+                g.onsuccess = () => done(g.result || null);
+                g.onerror = () => done(null);
+            } catch { done(null); }
         };
     });
 }

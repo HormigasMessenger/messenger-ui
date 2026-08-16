@@ -47,6 +47,10 @@ const callSlice = createSlice({
       state.peerId = action.payload.from;
       state.incomingOfferData = action.payload; // 🔥 сохраняем offer
       state.audioOnly = action.payload.media === "audio";
+      // Store the conversationId the offer carried so our answer/ice/end route back even when this peer
+      // isn't in the chat directory (empty conversations are hidden from /api/chats). Keep any explicit id
+      // we already had (e.g. from a push deep-link) if the frame didn't include one.
+      if (action.payload.conversationId) state.conversationId = action.payload.conversationId;
       state.pendingPushAnswer = null; // the caller's (re)offer arrived → no glare fallback needed
     },
 
@@ -65,7 +69,10 @@ const callSlice = createSlice({
     incomingRemoteEnd: (state) => {
       state.status = "idle";
       state.peerId = null;
-      state.conversationId = null;
+      // Keep conversationId through teardown: rejectCall/localEnd SEND a call:end AFTER this reducer runs,
+      // and that frame needs the conversationId to route back to the peer (esp. a peer with no listed
+      // chat). It's always overwritten when the next call starts (outgoingCall / answerViaPush /
+      // incomingOffer), so a lingering value never leaks into a different call.
       state.pendingPushAnswer = null;
       state.incomingOfferData = null;
       state.audioOnly = false;
@@ -74,7 +81,10 @@ const callSlice = createSlice({
     rejectCall: (state) => {
       state.status = "idle";
       state.peerId = null;
-      state.conversationId = null;
+      // Keep conversationId through teardown: rejectCall/localEnd SEND a call:end AFTER this reducer runs,
+      // and that frame needs the conversationId to route back to the peer (esp. a peer with no listed
+      // chat). It's always overwritten when the next call starts (outgoingCall / answerViaPush /
+      // incomingOffer), so a lingering value never leaks into a different call.
       state.pendingPushAnswer = null;
       state.incomingOfferData = null;
       state.audioOnly = false;
@@ -84,7 +94,10 @@ const callSlice = createSlice({
     localEnd: (state) => {
       state.status = "idle";
       state.peerId = null;
-      state.conversationId = null;
+      // Keep conversationId through teardown: rejectCall/localEnd SEND a call:end AFTER this reducer runs,
+      // and that frame needs the conversationId to route back to the peer (esp. a peer with no listed
+      // chat). It's always overwritten when the next call starts (outgoingCall / answerViaPush /
+      // incomingOffer), so a lingering value never leaks into a different call.
       state.pendingPushAnswer = null;
       state.incomingOfferData = null;
       state.audioOnly = false;

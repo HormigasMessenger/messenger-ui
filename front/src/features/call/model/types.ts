@@ -11,6 +11,6 @@ export interface CallState {
     offer: RTCSessionDescriptionInit | null;
 }
 
-export type FromOffer = { from: string, offer: RTCSessionDescriptionInit, media?: CallMedia }
+export type FromOffer = { from: string, offer: RTCSessionDescriptionInit, media?: CallMedia, conversationId?: string }
 export type FromAnswer = { from: string, answer: RTCSessionDescriptionInit }
 export type FromCandidate = { from: string, candidate: RTCIceCandidateInit }

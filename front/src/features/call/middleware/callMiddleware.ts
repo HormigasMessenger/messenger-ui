@@ -13,35 +13,12 @@ import type {RootState} from "@/store/store.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService";
 import {selectCallConversationId} from "@/features/chat/model/directDirectory.ts";
+import {selectUserName} from "@/features/directory";
 import {showCallNotification} from "@/features/notifications";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
 const exceptionHandler = (ex: Error) => logger.error(ex.message, ex);
-
-/**
- * Best-effort caller display name for the incoming-call notification, read from whatever the IDS
- * directory has already cached (idsApi getIdsUsersByIds → Record<id, user>). FULLY defensive: any shape
- * mismatch / missing cache / not-yet-loaded directory returns undefined → the notification falls back to
- * a generic localized title. Never throws.
- */
-function resolveCallerName(state: unknown, id: string): string | undefined {
-    try {
-        const queries = (state as { idsApi?: { queries?: Record<string, { data?: unknown }> } })?.idsApi?.queries;
-        if (!queries) return undefined;
-        for (const key of Object.keys(queries)) {
-            const data = queries[key]?.data;
-            if (!data || typeof data !== "object" || Array.isArray(data)) continue;
-            const u = (data as Record<string, { display_name?: string; first_name?: string; last_name?: string; email?: string }>)[id];
-            if (!u) continue;
-            const name = (u.display_name?.trim())
-                || [u.first_name, u.last_name].filter(Boolean).join(" ").trim()
-                || u.email;
-            if (name) return name;
-        }
-    } catch { /* ignore — generic title */ }
-    return undefined;
-}
 
 export const createCallMiddleware = (webRTCService: WebRTCService): Middleware => {
     return (store) => (next) => (action) => {
@@ -62,7 +39,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                 switch (msg.type) {
                     case "call:offer": {
                         const cs = (getState() as RootState).call;
-                        const offer = {from: msg.from, offer: msg.offer, media: msg.media};
+                        const offer = {from: msg.from, offer: msg.offer, media: msg.media, conversationId: msg.conversationId};
 
                         // Already engaged with THIS peer → NEVER decline them. A call:end here would kill
                         // the very call we're answering. A caller re-offers (call:ready re-offer, ICE
@@ -104,7 +81,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                         // post a LOCAL call notification (mirrors the message online-channel). When the tab
                         // is visible the in-app dialog + ringtone already alert, so skip it there.
                         if (typeof document !== "undefined" && document.hidden) {
-                            const name = resolveCallerName(getState(), msg.from);   // best-effort; undefined = generic
+                            const name = selectUserName(getState(), msg.from);   // best-effort; undefined = generic
                             showCallNotification({
                                 conversationId: selectCallConversationId(getState() as RootState, msg.from),
                                 callerId: msg.from,

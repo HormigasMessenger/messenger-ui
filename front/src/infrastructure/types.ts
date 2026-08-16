@@ -14,7 +14,7 @@ export type CallMedia = "audio" | "video";
 // backend relay never sees it. `call:ready` = "I opened from the call push, (re)send me the offer" — the
 // callee sends it so the still-ringing caller re-offers and the callee gets a real INCOMING dialog.
 export type IncomingWebRTCMessage =
-    | WSMessage & { type: "call:offer"; from: string; offer: RTCSessionDescriptionInit; media?: CallMedia; callId?: string }
+    | WSMessage & { type: "call:offer"; from: string; offer: RTCSessionDescriptionInit; media?: CallMedia; callId?: string; conversationId?: string }
     | WSMessage & { type: "call:answer"; from: string; answer: RTCSessionDescriptionInit }
     | WSMessage & { type: "call:ice"; from: string; candidate: RTCIceCandidateInit }
     | WSMessage & { type: "call:ready"; from: string; callId?: string }

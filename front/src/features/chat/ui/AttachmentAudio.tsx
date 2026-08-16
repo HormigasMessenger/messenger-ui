@@ -1,4 +1,4 @@
-import {useRef, type SyntheticEvent} from "react";
+import {useEffect, useRef, type SyntheticEvent} from "react";
 import {useTranslation} from "react-i18next";
 import {useAttachmentObjectUrl} from "@/features/chat/lib/useAttachmentObjectUrl.ts";
 import {loadAttachmentBlob, saveAttachmentBlob, deleteAttachmentBlob} from "@/features/chat/db/db.ts";
@@ -28,7 +28,7 @@ export function AttachmentAudio({
         load: loadAttachmentBlob, save: saveAttachmentBlob, invalidate: deleteAttachmentBlob,
     });
     const durationFixed = useRef(false);
-    const wiredRef = useRef(false);
+    const nodesRef = useRef<{src: MediaElementAudioSourceNode; gain: GainNode} | null>(null);
 
     // Boost quiet voice notes on playback via a WebAudio GainNode (a web app can't raise the device MEDIA
     // volume, but it can make the note audible at a lower one). Reuse the SHARED AudioContext — the one
@@ -42,12 +42,12 @@ export function AttachmentAudio({
         const ac = getSharedAudioContext();
         if (!ac) return;
         try {
-            if (!wiredRef.current) {
+            if (!nodesRef.current) {
                 const src = ac.createMediaElementSource(a);
                 const gain = ac.createGain();
                 gain.gain.value = AUDIO_PLAYBACK_GAIN;
                 src.connect(gain).connect(ac.destination);
-                wiredRef.current = true;
+                nodesRef.current = {src, gain};
             }
             if (ac.state === "suspended") {
                 // Not unlocked yet → the running graph won't output until resumed; re-play so the first
@@ -57,7 +57,12 @@ export function AttachmentAudio({
             }
         } catch { /* WebAudio blocked → native element playback */ }
     };
-    // Do NOT close the shared context on unmount — it's shared with the blip/ringtone.
+    // Disconnect this element's WebAudio nodes on unmount so they don't pile up in the SHARED, never-closed
+    // context (each played voice note otherwise leaks a MediaElementSource + GainNode + pins the <audio>).
+    useEffect(() => () => {
+        try { nodesRef.current?.gain.disconnect(); nodesRef.current?.src.disconnect(); } catch { /* ignore */ }
+        nodesRef.current = null;
+    }, []);
 
     // MediaRecorder webm has no Duration in its header → the <audio> reports duration=Infinity and the
     // seek bar / total time are broken. Force a real duration: seek to the end once (the blob is local
