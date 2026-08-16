@@ -5,9 +5,10 @@ import type {ChatSummary} from "@/entities/conversation";
 import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
+import {saveNames} from "@/features/directory/nameCache.ts";
 import {useGetGroupsQuery} from "@/features/groups";
 import {toGroupSummary} from "@/entities/conversation";
-import {useMemo} from "react";
+import {useEffect, useMemo} from "react";
 import {useTranslation} from "react-i18next";
 
 export function useContacts() {
@@ -44,6 +45,17 @@ export function useContacts() {
     const {data: idsById = {}} = useGetIdsUsersByIdsQuery(counterpartIds, {
         skip: skip || counterpartIds.length === 0,
     });
+
+    // Mirror resolved id→name into a PERSISTENT store so the service worker can name Web Push
+    // notifications while the app is closed (the RTK cache above is in-memory only). Best-effort.
+    useEffect(() => {
+        const map: Record<string, string> = {};
+        for (const [id, u] of Object.entries(idsById)) {
+            const n = idsDisplayName(u);
+            if (n && n !== id) map[id] = n;   // skip the id-fallback (not a real name)
+        }
+        if (Object.keys(map).length) void saveNames(map);
+    }, [idsById]);
 
     // Names resolve from the IDS directory (all users), then presence (online peers), then the
     // order label / identity id. Online status comes from presence (PRESENT_* frames). A GROUP renders

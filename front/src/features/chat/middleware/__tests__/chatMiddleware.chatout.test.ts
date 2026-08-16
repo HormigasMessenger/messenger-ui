@@ -169,7 +169,7 @@ describe("chatMiddleware — CHAT_OUT (live delivery)", () => {
         run(chatOut());
         expect(dispatched.some((a) => a.type === markChatUnread.type)).toBe(true);
         expect(playNotificationSound).toHaveBeenCalledTimes(1);
-        expect(showDesktopNotification).toHaveBeenCalledWith("chat.newMessage", "hi", "c1", SERVER_ID);
+        expect(showDesktopNotification).toHaveBeenCalledWith("chat.newMessage", "hi", "c1", SERVER_ID, "peer");
     });
 
     it("open elsewhere but visible → unread + sound, but no desktop notification", () => {

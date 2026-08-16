@@ -58,6 +58,29 @@ function openDedupDb() {
     });
 }
 
+// Best-effort display name for a user id from the PERSISTENT name cache the app writes (see
+// features/directory/nameCache.ts). Lets a Web Push name its sender even when the app is closed (the
+// app's in-memory directory cache is gone). Same DB/store/version as the app so whichever opens first
+// creates the store. Resolves null on anything missing — the notification then keeps its generic title.
+function cachedName(id) {
+    return new Promise((resolve) => {
+        if (!id) { resolve(null); return; }
+        let req;
+        try { req = indexedDB.open("hormiga-names", 1); } catch { resolve(null); return; }
+        req.onupgradeneeded = () => { try { const db = req.result; if (!db.objectStoreNames.contains("names")) db.createObjectStore("names"); } catch { /* ignore */ } };
+        req.onerror = () => resolve(null);
+        req.onsuccess = () => {
+            try {
+                const db = req.result;
+                if (!db.objectStoreNames.contains("names")) { resolve(null); return; }
+                const g = db.transaction("names").objectStore("names").get(id);
+                g.onsuccess = () => resolve(g.result || null);
+                g.onerror = () => resolve(null);
+            } catch { resolve(null); }
+        };
+    });
+}
+
 // Durably claim `id`: true if newly recorded (show), false if already shown within PERSIST_TTL_MS
 // (a redelivery → drop). Opportunistically prunes expired entries so the store stays bounded.
 async function idbClaim(id, now, ttl) {
@@ -116,7 +139,12 @@ async function showChatNotification(payload) {
     // call push is safe.
     if (!isCall && !(await claimShow(data.messageId))) return;
 
-    const title = (payload && payload.title) || (isCall ? "Incoming call" : "New message");
+    // Name the sender/caller from the persistent name cache (works even offline / app-closed, and for BOTH
+    // the online postMessage channel and Web Push). The name becomes the title; fall back to any title the
+    // sender supplied, then a generic. (For a call the body "is calling you…" + Answer action already make
+    // it clear it's a call, so the name alone as the title reads cleanly.)
+    const nm = await cachedName(data.senderId);
+    const title = nm || (payload && payload.title) || (isCall ? "Incoming call" : "New message");
     // A call gets its OWN tag so it never collapses into a message notification for the same chat.
     const tag = isCall
         ? "call:" + (data.conversationId || "chat")

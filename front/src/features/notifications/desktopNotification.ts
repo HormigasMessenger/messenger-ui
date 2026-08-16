@@ -63,7 +63,7 @@ export function armNotificationPermissionOnGesture(onGranted?: () => void) {
  * When the OS fully suspends the PWA (socket killed) only the Web Push fires — handled entirely in
  * the SW.
  */
-export function showDesktopNotification(title: string, body: string, conversationId?: string, messageId?: string) {
+export function showDesktopNotification(title: string, body: string, conversationId?: string, messageId?: string, senderId?: string) {
     try {
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         const base = import.meta.env.BASE_URL;
@@ -75,6 +75,7 @@ export function showDesktopNotification(title: string, body: string, conversatio
             data: {
                 conversationId,
                 messageId,   // ← the cross-channel dedup key (server message ULID)
+                senderId,    // ← the SW resolves the author name from the persistent name cache
                 url: conversationId ? `${base}?chat=${conversationId}` : base,
             },
         };

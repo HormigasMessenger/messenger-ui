@@ -103,7 +103,9 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                 // noise, and we can't name the sender anyway, so keep it to "new message" + text/attachment).
                 if (hidden) {
                     const body = msg.kind === "attachment" ? i18n.t("chat.attachment") : (msg.text || "");
-                    showDesktopNotification(i18n.t("chat.newMessage"), body, chatId, msg.id);
+                    // Title stays generic here; the SW upgrades it to the sender's NAME from the persistent
+                    // name cache (data.senderId) — same path the Web Push uses, so online and offline match.
+                    showDesktopNotification(i18n.t("chat.newMessage"), body, chatId, msg.id, frame.senderId);
                 }
             }
             break;
