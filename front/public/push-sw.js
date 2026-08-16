@@ -228,6 +228,9 @@ self.addEventListener("notificationclick", (event) => {
         const qs = new URLSearchParams();
         if (data.conversationId) qs.set("call", data.conversationId);
         if (data.senderId) qs.set("caller", data.senderId);
+        // Optional: caller's media choice, if the backend put it in the push data — keeps an audio call
+        // audio if we fall back to a callback (harmless when absent).
+        if (data.media === "audio" || data.media === "video") qs.set("media", data.media);
         target = base + "?" + qs.toString();
     } else if (!data.url && data.conversationId) {
         // OFFLINE message push carries no `url` (the webpush payload is {conversationId, messageId,

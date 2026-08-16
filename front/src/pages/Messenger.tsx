@@ -69,7 +69,7 @@ export default function Messenger() {
         // Answer flow: tell the still-ringing caller "I'm here" so they re-send the offer and we show a
         // real INCOMING dialog. conversationId comes from the push (survives a cold start before getChats
         // loads). Falls back to a glare callback if no offer arrives (see callMiddleware answerViaPush).
-        dispatch(answerViaPush({peerId: link.peerId, conversationId: link.conversationId}));
+        dispatch(answerViaPush({peerId: link.peerId, conversationId: link.conversationId, media: link.media}));
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");

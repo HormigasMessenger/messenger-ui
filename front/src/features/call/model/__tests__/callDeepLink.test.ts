@@ -8,6 +8,16 @@ describe("parseCallDeepLink", () => {
         expect(out).toEqual({ conversationId: "conv-1", peerId: "user-2" });
     });
 
+    it("parses the optional media hint (audio) when present", () => {
+        expect(parseCallDeepLink(new URLSearchParams("call=conv-1&caller=user-2&media=audio")))
+            .toEqual({ conversationId: "conv-1", peerId: "user-2", media: "audio" });
+    });
+
+    it("leaves media undefined for an unknown/absent value", () => {
+        expect(parseCallDeepLink(new URLSearchParams("call=conv-1&caller=user-2&media=bogus")))
+            .toEqual({ conversationId: "conv-1", peerId: "user-2", media: undefined });
+    });
+
     it("returns null when the caller is missing (can't call back an unknown peer)", () => {
         expect(parseCallDeepLink(new URLSearchParams("call=conv-1"))).toBeNull();
     });

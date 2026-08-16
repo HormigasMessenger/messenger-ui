@@ -7,7 +7,9 @@ import {
     incomingRemoteEnd,
     localEnd,
     outgoingCall,
+    pushAnswerFlushed,
 } from "@/features/call/model/slices/callSlice.js";
+import {connected} from "@/infrastructure/slices/websocketSlice.ts";
 import {READY_FALLBACK_MS} from "@/shared/config/webrtc.ts";
 import { createCallMiddleware } from "../callMiddleware";
 import type { WebRTCService } from "@/features/call/service/webRTCService";
@@ -131,16 +133,41 @@ describe("callMiddleware", () => {
         expect(webRTCService.resendOffer).not.toHaveBeenCalled();
     });
 
-    it("call/answerViaPush шлёт call:ready и, если offer не пришёл, откатывается на glare-перезвон", () => {
+    it("call/answerViaPush при подключённом WS: шлёт call:ready и, если offer не пришёл, откатывается на glare-перезвон", () => {
         vi.useFakeTimers();
         try {
-            store.getState = vi.fn(() => ({ call: { status: "idle", peerId: null, conversationId: "c9", incomingOfferData: null } }));
-            middleware(store)(next)({ type: "call/answerViaPush", payload: { peerId: "peerP", conversationId: "c9" } });
+            const pending = { peerId: "peerP", conversationId: "c9" };
+            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
+            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
+            expect(store.dispatch).toHaveBeenCalledWith(pushAnswerFlushed());
             expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
-            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
             vi.advanceTimersByTime(READY_FALLBACK_MS);
-            // Still idle after the window → fall back to calling them back.
-            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("call/answerViaPush при ОТКЛЮЧЁННОМ WS ждёт — call:ready уходит только на ws/connected (холодный старт)", () => {
+        const pending = { peerId: "peerP", conversationId: "c9" };
+        store.getState = vi.fn(() => ({ ws: { status: "disconnected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
+        middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
+        expect(webRTCService.signalReady).not.toHaveBeenCalled();       // socket closed → don't drop the frame
+        // The socket opens:
+        store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
+        middleware(store)(next)(connected());
+        expect(webRTCService.signalReady).toHaveBeenCalledWith("peerP");
+    });
+
+    it("call/answerViaPush: media=audio → фолбэк-перезвон тоже audio (аудио не превращается в видео)", () => {
+        vi.useFakeTimers();
+        try {
+            const pending = { peerId: "peerP", conversationId: "c9", media: "audio" as const };
+            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status: "idle", pendingPushAnswer: pending, incomingOfferData: null } }));
+            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
+            vi.advanceTimersByTime(READY_FALLBACK_MS);
+            expect(store.dispatch).toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: true }));
         } finally {
             vi.useRealTimers();
         }
@@ -149,13 +176,13 @@ describe("callMiddleware", () => {
     it("call/answerViaPush: если offer пришёл (не idle) — фолбэк-перезвон НЕ срабатывает", () => {
         vi.useFakeTimers();
         try {
-            // Idle when the ready is sent, then ringing by the time the fallback timer fires.
+            const pending = { peerId: "peerP", conversationId: "c9" };
             let status = "idle";
-            store.getState = vi.fn(() => ({ call: { status, peerId: "peerP", conversationId: "c9", incomingOfferData: null } }));
-            middleware(store)(next)({ type: "call/answerViaPush", payload: { peerId: "peerP", conversationId: "c9" } });
+            store.getState = vi.fn(() => ({ ws: { status: "connected" }, call: { status, pendingPushAnswer: pending, incomingOfferData: null } }));
+            middleware(store)(next)({ type: "call/answerViaPush", payload: pending });
             status = "ringing";
             vi.advanceTimersByTime(READY_FALLBACK_MS);
-            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9" }));
+            expect(store.dispatch).not.toHaveBeenCalledWith(outgoingCall({ peerId: "peerP", conversationId: "c9", audioOnly: false }));
         } finally {
             vi.useRealTimers();
         }
