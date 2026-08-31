@@ -78,11 +78,28 @@ export function useChatAttachments(
         }
     }, [selectedChatId, uploadUrlMut, confirmMut, reloadChatHistory, t]);
 
-    const downloadAttachment = useCallback(async (attachmentId: string) => {
+    const downloadAttachment = useCallback(async (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => {
         if (!selectedChatId || !attachmentId) return;
         try {
             const r = await downloadUrlMut({chatId: selectedChatId, attachmentId}).unwrap();
-            window.open(r.downloadUrl, "_blank", "noopener");
+            const ct = meta?.contentType ?? "";
+            const name = (meta?.fileName ?? "").toLowerCase();
+            // PDFs (and anything the browser renders) open in a tab to VIEW. Everything else — Word/Excel/
+            // zip/… — must be DOWNLOADED with its real filename: opening e.g. a .docx in a tab shows a
+            // browser error instead of the document. The presigned URL is same-origin (the edge), so the
+            // <a download> attribute is honored.
+            const viewable = ct === "application/pdf" || name.endsWith(".pdf");
+            if (viewable) {
+                window.open(r.downloadUrl, "_blank", "noopener");
+            } else {
+                const a = document.createElement("a");
+                a.href = r.downloadUrl;
+                a.download = meta?.fileName || "archivo";
+                a.rel = "noopener";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
         } catch (e) {
             logger.error("downloadAttachment failed", e as Error);
             toast.error(t("chat.downloadError"));
