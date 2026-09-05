@@ -63,7 +63,7 @@ export function armNotificationPermissionOnGesture(onGranted?: () => void) {
  * When the OS fully suspends the PWA (socket killed) only the Web Push fires — handled entirely in
  * the SW.
  */
-export function showDesktopNotification(title: string, body: string, conversationId?: string, messageId?: string) {
+export function showDesktopNotification(title: string, body: string, conversationId?: string, messageId?: string, senderId?: string) {
     try {
         if (!("Notification" in window) || Notification.permission !== "granted") return;
         const base = import.meta.env.BASE_URL;
@@ -75,6 +75,7 @@ export function showDesktopNotification(title: string, body: string, conversatio
             data: {
                 conversationId,
                 messageId,   // ← the cross-channel dedup key (server message ULID)
+                senderId,    // ← the SW resolves the author name from the persistent name cache
                 url: conversationId ? `${base}?chat=${conversationId}` : base,
             },
         };
@@ -90,6 +91,52 @@ export function showDesktopNotification(title: string, body: string, conversatio
                         // No active worker yet → show directly (best-effort; no Web Push either).
                         reg.showNotification(title, buildFallbackOptions(base, body, payload)).catch(() => {});
                     }
+                })
+                .catch(() => { try { new Notification(title, buildFallbackOptions(base, body, payload)); } catch { /* ignore */ } });
+            return;
+        }
+        new Notification(title, buildFallbackOptions(base, body, payload));
+    } catch { /* ignore */ }
+}
+
+/**
+ * Show a LOCAL notification for an INCOMING CALL when the app is alive (WebSocket up) but the tab is
+ * hidden/backgrounded — so we received the call:offer in-app but the user can't see the ringing dialog.
+ * This is the calls' equivalent of the message online-channel: the offline Web Push only fires when the
+ * BACKEND thinks the callee is offline, so an online-but-backgrounded callee got NO alert. Routed through
+ * the SW (same arbiter); data.kind="call" makes it render with the Answer action + ringtone tag, and the
+ * SW exempts calls from message dedup. notificationclick deep-links ?call=&caller=&media= to the answer
+ * flow (harmless if the ringing dialog is already in memory — answerViaPush no-ops while ringing).
+ */
+export function showCallNotification(opts: {conversationId?: string; callerId: string; media?: "audio" | "video"; title?: string; body?: string}) {
+    try {
+        if (!("Notification" in window) || Notification.permission !== "granted") return;
+        const base = import.meta.env.BASE_URL;
+        const qs = opts.conversationId
+            ? `?call=${encodeURIComponent(opts.conversationId)}&caller=${encodeURIComponent(opts.callerId)}${opts.media ? `&media=${opts.media}` : ""}`
+            : "";
+        // Caller passes LOCALIZED title/body (it knows the i18n language); fall back to English defaults if
+        // absent so the notification always has text.
+        const title = opts.title || "Incoming call";
+        const body = opts.body || "is calling you…";
+        const payload = {
+            title,
+            body,
+            tag: "call:" + (opts.conversationId || "chat"),
+            data: {
+                kind: "call",
+                conversationId: opts.conversationId,
+                senderId: opts.callerId,
+                media: opts.media,
+                url: `${base}${qs}`,
+            },
+        };
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.ready
+                .then((reg) => {
+                    const sw = reg.active;
+                    if (sw) sw.postMessage({type: "show-notification", payload});
+                    else reg.showNotification(title, buildFallbackOptions(base, body, payload)).catch(() => {});
                 })
                 .catch(() => { try { new Notification(title, buildFallbackOptions(base, body, payload)); } catch { /* ignore */ } });
             return;

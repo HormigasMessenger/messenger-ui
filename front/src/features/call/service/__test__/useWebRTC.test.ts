@@ -86,12 +86,13 @@ describe("WebRTCService", () => {
         await webRTCService.startCall("peer1");
 
         expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled();
-        expect(sendWS).toHaveBeenCalledWith({
+        expect(sendWS).toHaveBeenCalledWith(expect.objectContaining({
             type: "call:offer",
             to: "peer1",
             offer: { sdp: "offer-sdp", type: "offer" },
             media: "video",
-        });
+            callId: expect.any(String),   // per-attempt id now rides in the offer
+        }));
         expect(onLocalStream).toHaveBeenCalled();
     });
 

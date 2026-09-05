@@ -16,7 +16,8 @@ import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
 import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
-import {outgoingCall, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
+import {outgoingCall, answerViaPush, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
+import {parseCallDeepLink} from "@/features/call/model/callDeepLink.ts";
 import {useWebRTC} from "@/features/call/hooks/useWebRTC.ts";
 
 
@@ -62,11 +63,13 @@ export default function Messenger() {
     // Open the conversation and call the caller back — the original WebRTC offer is stale by the time
     // the app cold-starts, so "answering" re-initiates the call to them. Then strip the params.
     useEffect(() => {
-        const callParam = searchParams.get("call");
-        const caller = searchParams.get("caller");
-        if (!callParam) return;
-        openChat(callParam);
-        if (caller) dispatch(outgoingCall({peerId: caller}));
+        const link = parseCallDeepLink(searchParams);
+        if (!link) return;
+        openChat(link.conversationId);
+        // Answer flow: tell the still-ringing caller "I'm here" so they re-send the offer and we show a
+        // real INCOMING dialog. conversationId comes from the push (survives a cold start before getChats
+        // loads). Falls back to a glare callback if no offer arrives (see callMiddleware answerViaPush).
+        dispatch(answerViaPush({peerId: link.peerId, conversationId: link.conversationId, media: link.media}));
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");

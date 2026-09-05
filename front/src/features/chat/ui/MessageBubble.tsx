@@ -42,7 +42,7 @@ export function MessageBubble({
     isGroup?: boolean;      // GROUP: label the author on peers' bubbles + no ✓✓ (no read-by-N aggregate)
     authorName?: string;    // resolved display name of msg.from, for a peer's bubble in a group
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
-    onDownloadAttachment?: (attachmentId: string) => void;
+    onDownloadAttachment?: (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => void;
     onDeleteMessage?: (id: string, attachmentId?: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;
@@ -81,7 +81,7 @@ export function MessageBubble({
                     />
                 ) : (
                     <button
-                        onClick={() => onDownloadAttachment?.(msg.meta?.attachmentId ?? "")}
+                        onClick={() => onDownloadAttachment?.(msg.meta?.attachmentId ?? "", {fileName: msg.meta?.fileName, contentType: msg.meta?.contentType})}
                         className="underline decoration-dotted break-all text-left"
                         title="Descargar"
                     >

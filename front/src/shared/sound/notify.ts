@@ -19,6 +19,16 @@ function audioCtx(): AudioContext | null {
     }
 }
 
+/**
+ * The shared AudioContext, so other audio (e.g. the voice-note playback gain boost) reuses the ONE
+ * context that unlockAudio() already resumes on the first user gesture — instead of spinning up a fresh
+ * suspended context per element, which made the FIRST play silent (context not yet running). Returns null
+ * if WebAudio is unavailable.
+ */
+export function getSharedAudioContext(): AudioContext | null {
+    return audioCtx();
+}
+
 /** Short two-tone blip via WebAudio (no media asset needed). */
 export function playNotificationSound() {
     const ac = audioCtx();
@@ -66,8 +76,8 @@ function ringBurst() {
         osc.type = "sine";
         osc.frequency.setValueAtTime(480, t);
         gain.gain.setValueAtTime(0.0001, t);
-        gain.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
-        gain.gain.setValueAtTime(0.22, t + 0.3);
+        gain.gain.exponentialRampToValueAtTime(0.6, t + 0.02);
+        gain.gain.setValueAtTime(0.6, t + 0.3);
         gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.36);
         osc.connect(gain).connect(ac.destination);
         osc.start(t);

@@ -9,6 +9,10 @@ import {logger} from "@/shared/logger/logger.ts";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
+function uuid(): string {
+    try { return crypto.randomUUID(); } catch { return "call-" + Date.now() + "-" + Math.random().toString(36).slice(2); }
+}
+
 export class WebRTCService {
     /* ======================
        Private properties
@@ -18,6 +22,9 @@ export class WebRTCService {
     private remotePeerId: string | null = null;
     private pendingIce: RTCIceCandidateInit[] = [];
     private remoteReady: boolean = false;
+    // One id per outgoing call attempt (caller-minted), carried in the offer so a re-offer to a callee
+    // who joined late (from the call push) is recognizably the SAME call. Backend never sees it.
+    private callId: string | null = null;
     // Audio-only (voice) call → init() opens the mic without a camera. Set per call by startCall (caller)
     // / handleOffer (callee) before init runs.
     private audioOnly: boolean = false;
@@ -89,6 +96,7 @@ export class WebRTCService {
         this.remoteReady = false;
         this.pendingIce = [];
         this.audioOnly = false;
+        this.callId = null;
 
         this.pc?.close();
         this.pc = null;
@@ -162,6 +170,7 @@ export class WebRTCService {
 
         this.audioOnly = audioOnly;
         this.remotePeerId = peerId;
+        this.callId = uuid();
 
         try {
             await this.init();
@@ -180,7 +189,37 @@ export class WebRTCService {
             to: peerId,
             offer,
             media: audioOnly ? "audio" : "video",
+            callId: this.callId ?? undefined,
         });
+    }
+
+    /* ======================
+       Re-offer to the peer we're calling after they came online (call:ready). Used when the callee was
+       offline, got the call push and opened the app. This MUST be an ICE RESTART, not a plain resend:
+       our original ICE candidates were emitted (onicecandidate) right after the first offer, while the
+       callee was still offline, so they're gone — the callee would get our SDP but NONE of our network
+       candidates and the connection would never form. createOffer({iceRestart:true}) re-gathers, and
+       onicecandidate re-fires the candidates, now delivered to the online callee. No-op if not mid-call.
+    ====================== */
+    public async resendOffer(): Promise<boolean> {
+        if (!this.pc || !this.remotePeerId) return false;
+        const offer = await this.pc.createOffer({iceRestart: true});
+        await this.pc.setLocalDescription(offer);
+        this.send({
+            type: "call:offer",
+            to: this.remotePeerId,
+            offer,
+            media: this.audioOnly ? "audio" : "video",
+            callId: this.callId ?? undefined,
+        });
+        return true;
+    }
+
+    /* ======================
+       Tell the caller "I'm here — (re)send the offer" after opening from a call push (callee side).
+    ====================== */
+    public signalReady(to: string, callId?: string) {
+        this.send({type: "call:ready", to, callId});
     }
 
     /* ======================

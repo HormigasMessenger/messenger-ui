@@ -3,6 +3,12 @@ import toast from "react-hot-toast";
 import {useTranslation} from "react-i18next";
 
 import {logger} from "@/shared/logger/logger.ts";
+import {
+    VIDEO_CAPTURE_MAX_DIMENSION,
+    VIDEO_CAPTURE_FRAME_RATE,
+    VIDEO_CAPTURE_BITS_PER_SECOND,
+    VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND,
+} from "@/shared/config/chat.ts";
 
 /**
  * Camera + mic recording for video messages. Mirrors useVoiceRecorder but records video and EXPOSES the
@@ -35,6 +41,7 @@ export function useVideoRecorder() {
     const [stream, setStream] = useState<MediaStream | null>(null); // live preview stream
     const [recording, setRecording] = useState(false);
     const [elapsedMs, setElapsedMs] = useState(0);
+    const [bytes, setBytes] = useState(0); // accumulated recorded size (from timeslice chunks) — size cap
 
     const recRef = useRef<MediaRecorder | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
@@ -64,7 +71,26 @@ export function useVideoRecorder() {
         }
         openingRef.current = true;
         try {
-            const s = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+            // Prefer a capped resolution/frame rate (smaller files) but use `ideal` ONLY — a hard `max`
+            // makes getUserMedia throw OverconstrainedError on cameras that can't hit it, which broke
+            // recording entirely on some devices. If even the ideal-only request fails for any reason,
+            // fall back to a plain unconstrained capture so recording ALWAYS works (the record-time size
+            // cap still bounds the file). `ideal` is advisory — the browser downscales when it can.
+            const ideal: MediaStreamConstraints = {
+                video: {
+                    width: {ideal: VIDEO_CAPTURE_MAX_DIMENSION},
+                    height: {ideal: VIDEO_CAPTURE_MAX_DIMENSION},
+                    frameRate: {ideal: VIDEO_CAPTURE_FRAME_RATE},
+                },
+                audio: true,
+            };
+            let s: MediaStream;
+            try {
+                s = await navigator.mediaDevices.getUserMedia(ideal);
+            } catch (e1) {
+                logger.warn("constrained getUserMedia failed, falling back to plain video", e1 as Error);
+                s = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+            }
             streamRef.current = s;
             setStream(s);
             return true;
@@ -82,9 +108,25 @@ export function useVideoRecorder() {
         if (!s || recRef.current) return false;
         const mime = pickMimeType();
         mimeRef.current = mime;
-        const rec = new MediaRecorder(s, mime ? {mimeType: mime} : undefined);
+        // Cap the bitrate so a clip stays small. Best-effort: some devices/codecs reject the bitrate
+        // options in the MediaRecorder constructor (throws) — fall back to a plain recorder so recording
+        // never breaks (the record-time size cap still bounds the file).
+        let rec: MediaRecorder;
+        try {
+            rec = new MediaRecorder(s, {
+                ...(mime ? {mimeType: mime} : {}),
+                videoBitsPerSecond: VIDEO_CAPTURE_BITS_PER_SECOND,
+                audioBitsPerSecond: VIDEO_CAPTURE_AUDIO_BITS_PER_SECOND,
+            });
+        } catch (e) {
+            logger.warn("MediaRecorder with bitrate opts failed, falling back to defaults", e as Error);
+            try { rec = new MediaRecorder(s, mime ? {mimeType: mime} : undefined); }
+            catch { rec = new MediaRecorder(s); }
+        }
         chunksRef.current = [];
-        rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) chunksRef.current.push(e.data); };
+        rec.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) { chunksRef.current.push(e.data); setBytes((b) => b + e.data.size); }
+        };
         rec.onstop = () => {
             const type = (mimeRef.current || "video/webm").split(";")[0]; // clean base type for upload
             const file = chunksRef.current.length > 0
@@ -96,9 +138,12 @@ export function useVideoRecorder() {
             resolve?.(file);
         };
         recRef.current = rec;
-        rec.start();
+        // Timeslice (1s) so ondataavailable fires DURING recording → we can track size live and auto-stop
+        // before the file exceeds the send limit (a plain rec.start() emits one chunk only at stop).
+        rec.start(1000);
         startedAtRef.current = Date.now();
         setElapsedMs(0);
+        setBytes(0);
         setRecording(true);
         timerRef.current = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 200);
         return true;
@@ -139,5 +184,5 @@ export function useVideoRecorder() {
         streamRef.current = null;
     }, []);
 
-    return {stream, recording, elapsedMs, open, start, stop, close};
+    return {stream, recording, elapsedMs, bytes, open, start, stop, close};
 }

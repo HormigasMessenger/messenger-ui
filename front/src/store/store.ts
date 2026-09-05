@@ -23,7 +23,7 @@ import { contactsApi } from "@/features/contacts/rest/contactsApi.ts";
 import { idsApi } from "@/features/directory/idsApi.ts";
 import type {WebRTCService} from "@/features/call/service/webRTCService.ts";
 import { kratos } from "@/features/auth";
-import type {ChatSummary} from "@/entities/conversation";
+import { selectCallConversationId } from "@/features/chat/model/directDirectory.ts";
 
 export function configureAppStore(webRTCService: WebRTCService) {
     const store = configureStore({
@@ -49,12 +49,13 @@ export function configureAppStore(webRTCService: WebRTCService) {
                     probeSession: () => kratos.toSession(),
                     clearUser,
                     callConversationId: (state, to) => {
-                        // Loose casts (not RootState) — RootState is derived FROM this store, so naming
-                        // it here would be a circular type reference.
-                        const myId = (state as {user?: {id?: string}}).user?.id;
-                        const summaries = chatApi.endpoints.getChats.select({myId})(state as never)?.data as
-                            ChatSummary[] | undefined;
-                        return summaries?.find((c) => c.counterpartId === to)?.conversationId;
+                        // Prefer the explicit id the current call carries (a push deep-link sets it, so
+                        // the frame works on a cold start before getChats loads); otherwise resolve from
+                        // the UNION directory (getChats ∪ sticky), which also covers an open empty chat.
+                        // Loose casts (not RootState) — RootState is derived FROM this store, so naming it
+                        // here would be a circular type reference.
+                        const explicit = (state as {call?: {conversationId?: string | null}}).call?.conversationId;
+                        return explicit ?? selectCallConversationId(state as never, to);
                     },
                 }),
                 presenceMiddleware,

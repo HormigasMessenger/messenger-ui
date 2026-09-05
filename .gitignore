@@ -1,6 +1,8 @@
 # Node.js
 node_modules/
-package-lock.json
+# front/package-lock.json is COMMITTED: reproducible, pinned installs (`npm ci`) are
+# part of the E2EE code-delivery integrity story — a moving dep tree is a supply-chain
+# hole. We standardize on npm, so the other package managers' locks stay ignored.
 yarn.lock
 pnpm-lock.yaml
 

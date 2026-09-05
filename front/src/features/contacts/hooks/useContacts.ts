@@ -5,9 +5,10 @@ import type {ChatSummary} from "@/entities/conversation";
 import type {Contact} from "@/entities/contact";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {idsDisplayName, useGetIdsUsersByIdsQuery} from "@/features/directory";
+import {saveNames, loadNames} from "@/features/directory/nameCache.ts";
 import {useGetGroupsQuery} from "@/features/groups";
 import {toGroupSummary} from "@/entities/conversation";
-import {useMemo} from "react";
+import {useEffect, useMemo, useState} from "react";
 import {useTranslation} from "react-i18next";
 
 export function useContacts() {
@@ -45,6 +46,23 @@ export function useContacts() {
         skip: skip || counterpartIds.length === 0,
     });
 
+    // Mirror resolved id→name into a PERSISTENT store so the service worker can name Web Push
+    // notifications while the app is closed (the RTK cache above is in-memory only). Best-effort.
+    useEffect(() => {
+        const map: Record<string, string> = {};
+        for (const [id, u] of Object.entries(idsById)) {
+            const n = idsDisplayName(u);
+            if (n && n !== id) map[id] = n;   // skip the id-fallback (not a real name)
+        }
+        if (Object.keys(map).length) void saveNames(map);
+    }, [idsById]);
+
+    // READ-THROUGH: seed names from the persistent cache once on mount so a cold start shows real names
+    // immediately (while the IDS query above re-fetches), instead of briefly rendering ids/emails. The
+    // live idsById always WINS over the cache below, so fresh data supersedes the seed.
+    const [cachedNames, setCachedNames] = useState<Record<string, string>>({});
+    useEffect(() => { void loadNames().then(setCachedNames).catch(() => {}); }, []);
+
     // Names resolve from the IDS directory (all users), then presence (online peers), then the
     // order label / identity id. Online status comes from presence (PRESENT_* frames). A GROUP renders
     // from its own summary: its name, a group kind, and no presence (no single peer).
@@ -63,7 +81,8 @@ export function useContacts() {
             const ids = idsById[s.counterpartId];
             const p = presence[s.counterpartId];
             const name =
-                (ids ? idsDisplayName(ids) : undefined) ||
+                (ids ? idsDisplayName(ids) : undefined) ||   // live directory (freshest) wins
+                cachedNames[s.counterpartId] ||               // persistent cache (instant on cold start)
                 p?.name ||
                 (s.orderId ? `Order ${s.orderId}` : s.counterpartId);
             return {
@@ -84,7 +103,7 @@ export function useContacts() {
                 if (ua !== ub) return ub - ua;
                 return a.name.localeCompare(b.name, undefined, {sensitivity: "base"});
             }),
-        [summaries, presence, idsById, unreadByChat, t]
+        [summaries, presence, idsById, cachedNames, unreadByChat, t]
     );
 
     const getContactById = useMemo(

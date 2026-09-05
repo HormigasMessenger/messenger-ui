@@ -5,6 +5,8 @@ import {useTranslation} from "react-i18next";
 import {logger} from "@/shared/logger/logger.ts";
 import {MAX_ATTACHMENT_BYTES, IMAGE_MAX_DIMENSION, IMAGE_QUALITY, IMAGE_COMPRESS_MIN_BYTES} from "@/shared/config/chat.ts";
 import {compressImage} from "@/features/chat/lib/imageCompress.ts";
+import {videoPosterBlob} from "@/features/chat/lib/videoPoster.ts";
+import {saveAttachmentBlob} from "@/features/chat/db/db.ts";
 import {
     useAttachmentUploadUrlMutation,
     useAttachmentConfirmMutation,
@@ -59,6 +61,13 @@ export function useChatAttachments(
                 xhr.send(file);
             });
             await confirmMut({chatId: selectedChatId, attachmentId: up.attachmentId}).unwrap();
+            // Cache a first-frame poster from the LOCAL blob so the sender's just-sent video shows a real
+            // thumbnail immediately (not a black 🎬 placeholder). Best-effort, off the send path.
+            if (contentType.startsWith("video/")) {
+                videoPosterBlob(file)
+                    .then((poster) => { if (poster) return saveAttachmentBlob(up.attachmentId, poster); })
+                    .catch(() => { /* best-effort poster */ });
+            }
             reloadChatHistory().catch(() => {});
             toast.success(t("chat.fileSent"));
         } catch (e) {
@@ -69,11 +78,28 @@ export function useChatAttachments(
         }
     }, [selectedChatId, uploadUrlMut, confirmMut, reloadChatHistory, t]);
 
-    const downloadAttachment = useCallback(async (attachmentId: string) => {
+    const downloadAttachment = useCallback(async (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => {
         if (!selectedChatId || !attachmentId) return;
         try {
             const r = await downloadUrlMut({chatId: selectedChatId, attachmentId}).unwrap();
-            window.open(r.downloadUrl, "_blank", "noopener");
+            const ct = meta?.contentType ?? "";
+            const name = (meta?.fileName ?? "").toLowerCase();
+            // PDFs (and anything the browser renders) open in a tab to VIEW. Everything else — Word/Excel/
+            // zip/… — must be DOWNLOADED with its real filename: opening e.g. a .docx in a tab shows a
+            // browser error instead of the document. The presigned URL is same-origin (the edge), so the
+            // <a download> attribute is honored.
+            const viewable = ct === "application/pdf" || name.endsWith(".pdf");
+            if (viewable) {
+                window.open(r.downloadUrl, "_blank", "noopener");
+            } else {
+                const a = document.createElement("a");
+                a.href = r.downloadUrl;
+                a.download = meta?.fileName || "archivo";
+                a.rel = "noopener";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+            }
         } catch (e) {
             logger.error("downloadAttachment failed", e as Error);
             toast.error(t("chat.downloadError"));

@@ -50,7 +50,7 @@ export function MessageList({
     unseenBelow: number;
     onJumpToBottom: () => void;
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
-    onDownloadAttachment?: (attachmentId: string) => void;
+    onDownloadAttachment?: (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => void;
     onDeleteMessage?: (id: string, attachmentId?: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;

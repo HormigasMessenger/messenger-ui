@@ -8,8 +8,11 @@
 #
 FROM node:20-alpine AS build
 WORKDIR /app
-COPY package.json ./
-RUN npm install --no-audit --no-fund
+# Reproducible, pinned install from the committed lockfile (supply-chain integrity:
+# the shipped JS is only as trustworthy as its dependency tree). `npm ci` fails hard
+# if package.json and package-lock.json disagree — no silent drift at build time.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
 COPY . .
 # Vite base = the edge subpath the SPA is mounted under. We run `npx vite build`
 # directly (not `npm run build`) because the repo's `tsc -b` trips on a stale

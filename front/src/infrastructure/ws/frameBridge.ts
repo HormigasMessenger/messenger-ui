@@ -48,7 +48,10 @@ export function fromWire(incoming: WSMessage): IncomingWSMessage {
         const payload = (incoming.payload ?? {}) as { body?: string };
         const inner = payload.body ? JSON.parse(payload.body) : {};
         const from = (incoming.senderId as string) ?? (incoming.from as string);
-        return { ...inner, from } as IncomingWSMessage;
+        // Keep the frame's conversationId: the callee needs it to route its OWN answer/ice/end back, and
+        // can't always derive it from the chat directory (an empty/never-opened conversation is hidden from
+        // /api/chats). Without this, answering a caller you have no listed chat with silently no-ops.
+        return { ...inner, from, conversationId: incoming.conversationId } as IncomingWSMessage;
     }
 
     return incoming as IncomingWSMessage;

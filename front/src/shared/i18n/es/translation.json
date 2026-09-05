@@ -91,6 +91,7 @@
     "micError": "No se pudo acceder al micrófono",
     "voiceMessage": "Mensaje de voz",
     "video": "Video",
+    "attachment": "Adjunto",
     "loadingImage": "cargando…",
     "msgSendError": "No se pudo enviar — reabre el chat",
     "historyLoadError": "No se pudieron cargar los mensajes"

@@ -1,5 +1,5 @@
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
-import {showDesktopNotification} from "../desktopNotification";
+import {showDesktopNotification, showCallNotification} from "../desktopNotification";
 
 // showDesktopNotification must route the ONLINE notification through the service worker (the single
 // arbiter), carrying messageId so the SW can dedup it against an offline Web Push for the same
@@ -54,5 +54,42 @@ describe("showDesktopNotification — SW arbiter routing", () => {
         await flush();
         expect(reg.showNotification).toHaveBeenCalledTimes(1);
         expect(reg.showNotification.mock.calls[0][0]).toBe("Title");
+    });
+});
+
+describe("showCallNotification — local call alert (online-but-backgrounded)", () => {
+    beforeEach(() => stubNotification("granted"));
+
+    it("posts a kind=call notification to the SW with an answer deep-link", async () => {
+        const postMessage = vi.fn();
+        stubServiceWorker({postMessage});
+        showCallNotification({conversationId: "conv-1", callerId: "user-2", media: "audio"});
+        await flush();
+        expect(postMessage).toHaveBeenCalledTimes(1);
+        const arg = postMessage.mock.calls[0][0] as {type: string; payload: {tag: string; data: {kind: string; conversationId: string; senderId: string; media: string; url: string}}};
+        expect(arg.type).toBe("show-notification");
+        expect(arg.payload.tag).toBe("call:conv-1");
+        expect(arg.payload.data).toMatchObject({kind: "call", conversationId: "conv-1", senderId: "user-2", media: "audio"});
+        // notificationclick deep-links to the answer flow.
+        expect(arg.payload.data.url).toContain("call=conv-1");
+        expect(arg.payload.data.url).toContain("caller=user-2");
+        expect(arg.payload.data.url).toContain("media=audio");
+    });
+
+    it("does nothing when permission is not granted", async () => {
+        stubNotification("default");
+        const postMessage = vi.fn();
+        stubServiceWorker({postMessage});
+        showCallNotification({conversationId: "conv-1", callerId: "user-2"});
+        await flush();
+        expect(postMessage).not.toHaveBeenCalled();
+    });
+
+    it("falls back to reg.showNotification (call title) when there is no active SW", async () => {
+        const reg = stubServiceWorker(null);
+        showCallNotification({conversationId: "conv-1", callerId: "user-2"});
+        await flush();
+        expect(reg.showNotification).toHaveBeenCalledTimes(1);
+        expect(reg.showNotification.mock.calls[0][0]).toBe("Incoming call");
     });
 });

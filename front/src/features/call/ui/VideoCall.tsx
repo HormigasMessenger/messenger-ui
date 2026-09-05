@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useRef} from "react";
 import {useSelector} from "react-redux";
 import {useTranslation} from "react-i18next";
 import {skipToken} from "@reduxjs/toolkit/query/react";
@@ -53,9 +53,12 @@ export default function VideoCall({
     const {data: caller} = useGetIdsUserQuery(callFrom ?? skipToken);
     const callerName = caller ? idsDisplayName(caller) : (callFrom ?? "");
 
-    const [newCall, setNewCall] = useState(true);
-
-    if (newCall && callStatus === "ringing") {
+    // Show the incoming Accept/Reject dialog purely on status === "ringing". (Was gated behind a local
+    // `newCall` useState that only reset on mount → if two calls batched so the status never rendered as
+    // "idle" between them, VideoCall didn't remount, the flag stayed false, and the SECOND call showed no
+    // dialog — the intermittent "через раз". Accepting moves status to "connecting", so this condition
+    // closes on its own; the flag was redundant AND racy.)
+    if (callStatus === "ringing") {
         return (
             <ConfirmModal
                 title={t("call.incoming")}
@@ -63,7 +66,6 @@ export default function VideoCall({
                 confirmText={t("call.accept")}
                 cancelText={t("call.reject")}
                 onConfirm={() => {
-                    setNewCall(false);
                     acceptCall();
                 }}
                 onCancel={() => {

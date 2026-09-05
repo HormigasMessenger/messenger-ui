@@ -58,6 +58,32 @@ function openDedupDb() {
     });
 }
 
+// Best-effort display name for a user id from the PERSISTENT name cache the app writes (see
+// features/directory/nameCache.ts). Lets a Web Push name its sender even when the app is closed (the
+// app's in-memory directory cache is gone). Same DB/store/version as the app so whichever opens first
+// creates the store. Resolves null on anything missing — the notification then keeps its generic title.
+function cachedName(id) {
+    return new Promise((resolve) => {
+        if (!id) { resolve(null); return; }
+        let req;
+        try { req = indexedDB.open("hormiga-names", 1); } catch { resolve(null); return; }
+        req.onupgradeneeded = () => { try { const db = req.result; if (!db.objectStoreNames.contains("names")) db.createObjectStore("names"); } catch { /* ignore */ } };
+        req.onerror = () => resolve(null);
+        req.onsuccess = () => {
+            const db = req.result;
+            // Close after the read so we don't leak a connection per notification, and so a future app-side
+            // version bump of this DB isn't blocked by a lingering open handle in the SW.
+            const done = (v) => { try { db.close(); } catch { /* ignore */ } resolve(v); };
+            try {
+                if (!db.objectStoreNames.contains("names")) { done(null); return; }
+                const g = db.transaction("names").objectStore("names").get(id);
+                g.onsuccess = () => done(g.result || null);
+                g.onerror = () => done(null);
+            } catch { done(null); }
+        };
+    });
+}
+
 // Durably claim `id`: true if newly recorded (show), false if already shown within PERSIST_TTL_MS
 // (a redelivery → drop). Opportunistically prunes expired entries so the store stays bounded.
 async function idbClaim(id, now, ttl) {
@@ -108,11 +134,20 @@ async function claimShow(messageId) {
 
 async function showChatNotification(payload) {
     const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
-    // Dedup across channels + across the backend's redelivery (L1 sync claim, then durable L2).
-    if (!(await claimShow(data.messageId))) return;
-
     const isCall = data.kind === "call";
-    const title = (payload && payload.title) || (isCall ? "Incoming call" : "New message");
+    // Dedup MESSAGES across channels + redelivery (L1 sync claim, then durable L2). CALLS are exempt:
+    // dedup is for avoiding double message banners, but a call must ALWAYS show — the backend sends one
+    // per call and a reused/colliding messageId would silently swallow a real incoming call. Any true
+    // visual duplicate is already collapsed by the per-conversation call `tag` below, so showing every
+    // call push is safe.
+    if (!isCall && !(await claimShow(data.messageId))) return;
+
+    // Name the sender/caller from the persistent name cache (works even offline / app-closed, and for BOTH
+    // the online postMessage channel and Web Push). The name becomes the title; fall back to any title the
+    // sender supplied, then a generic. (For a call the body "is calling you…" + Answer action already make
+    // it clear it's a call, so the name alone as the title reads cleanly.)
+    const nm = await cachedName(data.senderId);
+    const title = nm || (payload && payload.title) || (isCall ? "Incoming call" : "New message");
     // A call gets its OWN tag so it never collapses into a message notification for the same chat.
     const tag = isCall
         ? "call:" + (data.conversationId || "chat")
@@ -157,11 +192,17 @@ self.addEventListener("push", (event) => {
     let payload = {};
     try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
     event.waitUntil((async () => {
-        // Suppress the system notification while the app is in the FOREGROUND — the user is looking at
-        // it and the message already shows in-app; a Web Push banner would be redundant/annoying (this
-        // happens when a push is delivered/redelivered just as the user returns to the app). We do NOT
-        // claim dedup here, so a later background redelivery still notifies if it was never seen.
-        if (await appInForeground()) return;
+        // A CALL push is time-critical and must NEVER be suppressed by the foreground heuristic: a
+        // backgrounded mobile PWA can falsely report visible/focused (the phantom-online case), which
+        // ate the only ring on some incoming calls ("приходят через раз"). If the app is TRULY in the
+        // foreground the in-app ringing (WS call:offer) already fires, so a redundant banner is harmless.
+        const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+        if (data.kind !== "call") {
+            // Messages: still suppress in the foreground — the user sees them in-app and a banner would
+            // be redundant/annoying. We do NOT claim dedup here, so a later background redelivery still
+            // notifies if it was never seen.
+            if (await appInForeground()) return;
+        }
         await showChatNotification(payload);
     })());
 });
@@ -222,6 +263,9 @@ self.addEventListener("notificationclick", (event) => {
         const qs = new URLSearchParams();
         if (data.conversationId) qs.set("call", data.conversationId);
         if (data.senderId) qs.set("caller", data.senderId);
+        // Optional: caller's media choice, if the backend put it in the push data — keeps an audio call
+        // audio if we fall back to a callback (harmless when absent).
+        if (data.media === "audio" || data.media === "video") qs.set("media", data.media);
         target = base + "?" + qs.toString();
     } else if (!data.url && data.conversationId) {
         // OFFLINE message push carries no `url` (the webpush payload is {conversationId, messageId,
