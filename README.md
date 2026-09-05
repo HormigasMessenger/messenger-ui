@@ -195,5 +195,9 @@ which verifies the edge returns 200. Full test gate: `npx vitest run`.
 
 ## License
 
-**PolyForm Noncommercial License 1.0.0** — see [LICENSE](./LICENSE). Free to use, modify and share for
-**noncommercial** purposes. **Commercial use requires a separate agreement with the author.**
+**GNU General Public License v3.0** — see [LICENSE](./LICENSE). Free software: use, study, modify and
+share it, including commercially, provided derivatives stay open under the GPL and ship their source.
+
+> Relicensed from PolyForm Noncommercial to GPL-3.0 to adopt the Signal-protocol E2EE library
+> (`@privacyresearch/libsignal-protocol-typescript`, GPL-3.0) — the best technical basis for the
+> closed-chat encryption. Copyleft applies to this frontend project.

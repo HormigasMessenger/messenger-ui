@@ -2,7 +2,7 @@
   "name": "messenger",
   "private": true,
   "version": "0.1.1",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite",
