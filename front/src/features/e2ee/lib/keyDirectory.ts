@@ -63,8 +63,16 @@ export function selfCount(deviceId: string): Promise<CountResponse> {
  * prekey per device server-side, so only call it when actually establishing a session, not speculatively.
  * A device with an exhausted pool returns oneTimePreKey=null (X3DH falls back to signed-prekey only).
  */
-export function fetchUserKeys(userId: string): Promise<FetchResponse> {
-    return req<FetchResponse>(`/keys/${encodeURIComponent(userId)}`);
+export async function fetchUserKeys(userId: string): Promise<FetchResponse> {
+    try {
+        return await req<FetchResponse>(`/keys/${encodeURIComponent(userId)}`);
+    } catch (e) {
+        // A peer who has never published keys is a 404 — that's "no keys yet", NOT an error. Return an
+        // empty roster so the caller can give a clear "contact hasn't enabled encryption" message instead
+        // of a generic failure. Any OTHER status is a real error and re-throws.
+        if (e instanceof KeyDirectoryError && e.status === 404) return { userId, devices: [] };
+        throw e;
+    }
 }
 
 /** Fetch one specific device's bundle (also consumes an OPK for that device). */

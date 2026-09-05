@@ -11,6 +11,10 @@ import {logger} from "@/shared/logger/logger.ts";
 
 export const ENVELOPE_V = 1;
 
+// Thrown when the peer has published no keys yet (never opened the app since E2EE shipped). Distinct from a
+// crypto failure so the UI can tell the user to ask their contact to open the app, rather than a vague error.
+export const NO_PEER_KEYS = "NO_PEER_KEYS";
+
 // One recipient device's ciphertext. `t` = libsignal message type (3 = prekey/X3DH-init, 1 = ratchet).
 interface DeviceCipher { t: number; b: string }   // b = base64 ciphertext body
 export interface SecretEnvelope {
@@ -39,6 +43,7 @@ async function ensureSessions(store: SignalStore, peerUserId: string): Promise<s
     const need: string[] = [];
     // We can't enumerate sessions cheaply, so fetch the roster and check per device.
     const {devices} = await fetchUserKeys(peerUserId);
+    if (devices.length === 0) throw new Error(NO_PEER_KEYS);   // peer never provisioned → can't X3DH
     for (const dev of devices) {
         const addr = addrOf(peerUserId, dev.deviceId);
         if (await store.loadSession(addr.toString())) { known.push(dev.deviceId); continue; }

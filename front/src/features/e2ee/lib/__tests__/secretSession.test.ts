@@ -76,6 +76,12 @@ describe("secretSession — X3DH + Double Ratchet, end to end", () => {
         expect(await decryptFrom(alice.store, "bob", alice.deviceId, r1)).toBe("reply");
     });
 
+    it("encrypting to a peer with NO published keys throws NO_PEER_KEYS (not a vague failure)", async () => {
+        const alice = await provisionAs("alice", "e2ee-nk");
+        // "carol" never provisioned → directory has nothing → 404 → empty roster → NO_PEER_KEYS.
+        await expect(encryptTo(alice.store, "carol", alice.deviceId, "hi")).rejects.toThrow("NO_PEER_KEYS");
+    });
+
     it("out-of-order deliver (3,1,2) all decrypt; a duplicate is rejected", async () => {
         const alice = await provisionAs("alice", "e2ee-a3");
         const bob = await provisionAs("bob", "e2ee-b3");
