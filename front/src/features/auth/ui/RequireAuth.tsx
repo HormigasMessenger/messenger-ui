@@ -5,6 +5,7 @@ import {Navigate} from "react-router-dom";
 import {logger} from "@/shared/logger/logger.ts";
 import {setUser} from "@/features/auth/slices/userSlice.ts";
 import {isNotLogged} from "@/shared/utils/checks.ts";
+import {provisionE2EEInBackground} from "@/features/e2ee";
 import { kratos } from "../model/services/kratos.ts";
 
 
@@ -49,6 +50,9 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
                     id: session.identity.id,
                     name: displayName || traits.email || session.identity.id,
                 }));
+                // Publish this device's E2EE public keys to the directory (best-effort, fire-and-forget,
+                // never affects login). Readies the ground for opt-in secret chats — no UI change yet.
+                provisionE2EEInBackground();
             }
             setLoading(false);
         });
