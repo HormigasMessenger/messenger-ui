@@ -43,7 +43,7 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                     const plain = (await loadPlaintext(m.id)) ?? (m.clientId ? await loadPlaintext(m.clientId) : null);
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
-                        if (row) row.text = plain ?? i18n.t("chat.decryptUnavailable");
+                        if (row) { row.text = plain ?? i18n.t("chat.decryptUnavailable"); row.secret = true; }
                     }));
                 }
             })();
@@ -71,7 +71,7 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             // SECRET (E2EE) message: the wire body is an opaque envelope. Store a placeholder now, then
             // decrypt asynchronously (the ratchet is async + single-writer) and patch the row's text in.
             const secretBody = isSecretEnvelope(msg.text) ? msg.text : null;
-            if (secretBody) msg.text = i18n.t("chat.decrypting");
+            if (secretBody) { msg.text = i18n.t("chat.decrypting"); msg.secret = true; }
 
             // Append to the open conversation's history (idempotent). No-op if that query has
             // no subscriber (chat not open) — the message loads over REST when it's opened.
@@ -92,7 +92,7 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                     })
                 );
                 decryptReceived(frame.senderId ?? msg.from, secretBody)
-                    .then((plain) => { patch(plain); void savePlaintext(msg.id, plain); })  // stash for reloaded history
+                    .then((plain) => { patch(plain); void savePlaintext(msg.id, chatId, plain); })  // stash for reloaded history
                     .catch(async () => patch((await loadPlaintext(msg.id)) ?? i18n.t("chat.decryptUnavailable")));
             }
 

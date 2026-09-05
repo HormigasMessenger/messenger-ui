@@ -23,6 +23,7 @@ export function toChatMessageView(
         createdAt: msg.createdAt.getTime(),
         kind: msg.kind,
         meta: msg.meta,
+        secret: msg.secret,
     };
 }
 

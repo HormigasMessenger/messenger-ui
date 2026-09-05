@@ -25,6 +25,9 @@ export const ChatMessageSchema = z.object({
     // payload.kind (e.g. "attachment") + opaque meta (attachmentId/fileName/contentType/…)
     kind: z.string().optional(),
     meta: z.record(z.string(), z.string()).optional(),
+    // Set client-side when the message travelled E2EE (its wire body was a secret envelope). Drives the
+    // 🔒 marker in the bubble; never comes from the server.
+    secret: z.boolean().optional(),
 });
 
 export type ChatMessage = z.infer<typeof ChatMessageSchema>;

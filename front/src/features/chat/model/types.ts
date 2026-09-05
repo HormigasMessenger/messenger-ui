@@ -49,5 +49,6 @@ export type ChatMessageView = {
     createdAt: number;   // epoch ms — compared against the peer read watermark for per-message ✓✓
     kind?: string;
     meta?: Record<string, string>;
+    secret?: boolean;    // travelled E2EE → show a 🔒 marker on the bubble
 };
 

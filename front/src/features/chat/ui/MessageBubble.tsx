@@ -14,6 +14,7 @@ export interface ChatMessageView {
     createdAt: number;
     kind?: string;
     meta?: Record<string, string>;
+    secret?: boolean;   // E2EE message → show a 🔒 marker
 }
 
 /**
@@ -90,6 +91,9 @@ export function MessageBubble({
                 )
             ) : (
                 linkify(msg.text)
+            )}
+            {msg.secret && (
+                <span className="ml-1 text-[10px] align-bottom opacity-70" title={t("chat.secretOn")}>🔒</span>
             )}
             <span className="ml-2 text-[10px] align-bottom opacity-50">{formatLocalTime(msg.createdAt)}</span>
             {msg.fromMe && (() => {
