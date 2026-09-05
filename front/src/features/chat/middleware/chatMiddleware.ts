@@ -13,7 +13,7 @@ import {logger} from "@/shared/logger/logger.ts";
 import {playNotificationSound} from "@/shared/sound/notify.ts";
 import {showDesktopNotification} from "@/features/notifications";
 import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
-import {savePlaintext, loadPlaintext} from "@/features/e2ee/lib/atRest.ts";
+import {savePlaintext, loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "@/features/e2ee/lib/atRest.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -40,7 +40,7 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             const d = store.dispatch as AppDispatch;
             void (async () => {
                 for (const m of secret) {
-                    const plain = (await loadPlaintext(m.id)) ?? (m.clientId ? await loadPlaintext(m.clientId) : null);
+                    const plain = (await loadPlaintext(m.id, E2EE_PLAINTEXT_TTL_MS)) ?? (m.clientId ? await loadPlaintext(m.clientId, E2EE_PLAINTEXT_TTL_MS) : null);
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
                         if (row) { row.text = plain ?? i18n.t("chat.decryptUnavailable"); row.secret = true; }

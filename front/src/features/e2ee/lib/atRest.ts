@@ -12,6 +12,11 @@ import {wrapBytes, unwrapBytes, type Wrapped} from "./deviceKey.ts";
 const DB = "e2ee-plaintext";
 const STORE = "pt";
 const V = 2;                                // v2 adds chatId + the by-chat index
+
+// Disappearing secret messages: a stored decrypted plaintext is auto-deleted this long after it was saved.
+// After that the message reads "🔒 unavailable" (the ratchet key is long gone, so it's unrecoverable — by
+// design). 48h, global.
+export const E2EE_PLAINTEXT_TTL_MS = 48 * 60 * 60 * 1000;
 const enc = new TextEncoder(), dec = new TextDecoder();
 
 interface Rec { chatId: string; savedAt: number; w: Wrapped }
