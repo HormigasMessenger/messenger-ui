@@ -10,17 +10,8 @@ import {wrapBytes, unwrapBytes, type Wrapped} from "./deviceKey.ts";
 // Stores: meta (identity keypair + registrationId + deviceId) · prekeys · signedprekeys · sessions (ratchet
 // state, wrapped) · peers (peer public identity keys, for trust-on-first-use).
 
-const DB = "e2ee-signal";
 const V = 1;
 const META = "meta", PREKEYS = "prekeys", SIGNED = "signedprekeys", SESSIONS = "sessions", PEERS = "peers";
-
-function db(): Promise<IDBPDatabase> {
-    return openDB(DB, V, {
-        upgrade(d) {
-            for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS]) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
-        },
-    });
-}
 
 // A stored keypair: public half in the clear, private half wrapped.
 interface StoredKeyPair { pub: ArrayBuffer; priv: Wrapped }
@@ -33,71 +24,81 @@ async function unpackKeyPair(s: StoredKeyPair | undefined): Promise<KeyPairType 
 const enc = new TextEncoder(), dec = new TextDecoder();
 
 export class SignalStore implements StorageType {
+    // dbName is parameterized so tests can isolate two "devices"; prod uses the single default.
+    constructor(private dbName = "e2ee-signal") {}
+    private db(): Promise<IDBPDatabase> {
+        return openDB(this.dbName, V, {
+            upgrade(d) {
+                for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS]) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
+            },
+        });
+    }
+
     // --- identity + registration (set once at provisioning) ---
     async setup(identity: KeyPairType, registrationId: number, deviceId: string): Promise<void> {
-        const d = await db();
+        const d = await this.db();
         await d.put(META, await packKeyPair(identity), "identity");
         await d.put(META, registrationId, "registrationId");
         await d.put(META, deviceId, "deviceId");
     }
     async getIdentityKeyPair(): Promise<KeyPairType | undefined> {
-        return unpackKeyPair((await (await db()).get(META, "identity")) as StoredKeyPair | undefined);
+        return unpackKeyPair((await (await this.db()).get(META, "identity")) as StoredKeyPair | undefined);
     }
     async getLocalRegistrationId(): Promise<number | undefined> {
-        return (await (await db()).get(META, "registrationId")) as number | undefined;
+        return (await (await this.db()).get(META, "registrationId")) as number | undefined;
     }
     async getDeviceId(): Promise<string | undefined> {
-        return (await (await db()).get(META, "deviceId")) as string | undefined;
+        return (await (await this.db()).get(META, "deviceId")) as string | undefined;
     }
 
     // --- peer identities (TOFU) ---
     async isTrustedIdentity(addr: string, identityKey: ArrayBuffer): Promise<boolean> {
-        const known = (await (await db()).get(PEERS, addr)) as ArrayBuffer | undefined;
+        const known = (await (await this.db()).get(PEERS, addr)) as ArrayBuffer | undefined;
         if (!known) return true;                              // first contact → trust (safety number to be verified)
         return b64eq(known, identityKey);                     // changed key → NOT trusted (safety-number-changed)
     }
     async saveIdentity(addr: string, publicKey: ArrayBuffer): Promise<boolean> {
-        const d = await db();
+        const d = await this.db();
         const prev = (await d.get(PEERS, addr)) as ArrayBuffer | undefined;
         await d.put(PEERS, publicKey, addr);
         return !!prev && !b64eq(prev, publicKey);             // true = the identity CHANGED (caller warns)
     }
     async loadIdentityKey(addr: string): Promise<ArrayBuffer | undefined> {
-        return (await (await db()).get(PEERS, addr)) as ArrayBuffer | undefined;
+        return (await (await this.db()).get(PEERS, addr)) as ArrayBuffer | undefined;
     }
 
     // --- one-time prekeys ---
     async loadPreKey(id: string | number): Promise<KeyPairType | undefined> {
-        return unpackKeyPair((await (await db()).get(PREKEYS, String(id))) as StoredKeyPair | undefined);
+        return unpackKeyPair((await (await this.db()).get(PREKEYS, String(id))) as StoredKeyPair | undefined);
     }
     async storePreKey(id: string | number, kp: KeyPairType): Promise<void> {
-        await (await db()).put(PREKEYS, await packKeyPair(kp), String(id));
+        await (await this.db()).put(PREKEYS, await packKeyPair(kp), String(id));
     }
-    async removePreKey(id: string | number): Promise<void> { await (await db()).delete(PREKEYS, String(id)); }
-    async countPreKeys(): Promise<number> { return (await db()).count(PREKEYS); }
+    async removePreKey(id: string | number): Promise<void> { await (await this.db()).delete(PREKEYS, String(id)); }
+    async countPreKeys(): Promise<number> { return (await this.db()).count(PREKEYS); }
 
     // --- signed prekeys ---
     async loadSignedPreKey(id: string | number): Promise<KeyPairType | undefined> {
-        return unpackKeyPair((await (await db()).get(SIGNED, String(id))) as StoredKeyPair | undefined);
+        return unpackKeyPair((await (await this.db()).get(SIGNED, String(id))) as StoredKeyPair | undefined);
     }
     async storeSignedPreKey(id: string | number, kp: KeyPairType): Promise<void> {
-        await (await db()).put(SIGNED, await packKeyPair(kp), String(id));
+        await (await this.db()).put(SIGNED, await packKeyPair(kp), String(id));
     }
-    async removeSignedPreKey(id: string | number): Promise<void> { await (await db()).delete(SIGNED, String(id)); }
+    async removeSignedPreKey(id: string | number): Promise<void> { await (await this.db()).delete(SIGNED, String(id)); }
 
     // --- sessions (ratchet state — wrapped) ---
     async loadSession(addr: string): Promise<SessionRecordType | undefined> {
-        const w = (await (await db()).get(SESSIONS, addr)) as Wrapped | undefined;
+        const w = (await (await this.db()).get(SESSIONS, addr)) as Wrapped | undefined;
         if (!w) return undefined;
         return dec.decode(await unwrapBytes(w));
     }
     async storeSession(addr: string, record: SessionRecordType): Promise<void> {
-        await (await db()).put(SESSIONS, await wrapBytes(enc.encode(record).buffer), addr);
+        await (await this.db()).put(SESSIONS, await wrapBytes(enc.encode(record).buffer), addr);
     }
 
     // --- wipe (logout) ---
     async clear(): Promise<void> {
-        const d = await db();
+        const d = await this.db();
         for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS]) await d.clear(s);
     }
 }
