@@ -12,6 +12,7 @@ import {markSent} from "@/features/chat/model/slices/outboxSlice.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import {playNotificationSound} from "@/shared/sound/notify.ts";
 import {showDesktopNotification} from "@/features/notifications";
+import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -43,6 +44,11 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
             const chatId = msg.chatId;
             if (!chatId) break;
 
+            // SECRET (E2EE) message: the wire body is an opaque envelope. Store a placeholder now, then
+            // decrypt asynchronously (the ratchet is async + single-writer) and patch the row's text in.
+            const secretBody = isSecretEnvelope(msg.text) ? msg.text : null;
+            if (secretBody) msg.text = i18n.t("chat.decrypting");
+
             // Append to the open conversation's history (idempotent). No-op if that query has
             // no subscriber (chat not open) — the message loads over REST when it's opened.
             dispatch(
@@ -53,6 +59,18 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                     upsertMessage(draft, msg);
                 })
             );
+
+            if (secretBody) {
+                const patch = (text: string) => dispatch(
+                    chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
+                        const row = draft?.find((m) => m.id === msg.id);
+                        if (row) row.text = text;
+                    })
+                );
+                decryptReceived(frame.senderId ?? msg.from, secretBody)
+                    .then((plain) => patch(plain))
+                    .catch(() => patch(i18n.t("chat.decryptUnavailable")));   // dup / gap / no-session
+            }
 
             // NOTE: we do NOT infer the peer's read state from an incoming message. Receiving a
             // reply does not imply the peer read my earlier messages — messages can cross (I send A,
@@ -102,7 +120,8 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                 // Body: a real text message, else a GENERIC "attachment" — never the file name (it's
                 // noise, and we can't name the sender anyway, so keep it to "new message" + text/attachment).
                 if (hidden) {
-                    const body = msg.kind === "attachment" ? i18n.t("chat.attachment") : (msg.text || "");
+                    const body = secretBody ? i18n.t("chat.encryptedMessage")
+                        : msg.kind === "attachment" ? i18n.t("chat.attachment") : (msg.text || "");
                     // Title stays generic here; the SW upgrades it to the sender's NAME from the persistent
                     // name cache (data.senderId) — same path the Web Push uses, so online and offline match.
                     showDesktopNotification(i18n.t("chat.newMessage"), body, chatId, msg.id, frame.senderId);

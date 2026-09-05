@@ -94,7 +94,15 @@
     "attachment": "Attachment",
     "loadingImage": "loading…",
     "msgSendError": "Couldn't send — reopen the chat",
-    "historyLoadError": "Couldn't load messages"
+    "historyLoadError": "Couldn't load messages",
+    "decrypting": "Decrypting…",
+    "decryptUnavailable": "🔒 Message unavailable",
+    "encryptedMessage": "🔒 Encrypted message",
+    "encryptFailed": "Couldn't encrypt — message not sent",
+    "secretChat": "Secret chat",
+    "secretOn": "End-to-end encrypted",
+    "secretEnableTitle": "Turn on secret chat (end-to-end encryption)",
+    "secretDisableTitle": "Turn off secret chat"
   },
   "group": {
     "newGroup": "New group",

@@ -66,8 +66,8 @@ describe("useMessageComposer", () => {
         act(() => { result.current.sendMessage("hello"); });
         expect(enqueue).toHaveBeenCalledTimes(1);
         const args = enqueue.mock.calls[0];
-        // (dispatch, text, myId, chatId, counterpartId, orderId)
-        expect(args.slice(1)).toEqual(["hello", MY, "c1", "peer", "o1"]);
+        // (dispatch, text, myId, chatId, counterpartId, orderId, secret)
+        expect(args.slice(1)).toEqual(["hello", MY, "c1", "peer", "o1", false]);   // false = not a secret chat
         expect(result.current.messageInput).toBe("");
     });
 

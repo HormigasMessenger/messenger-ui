@@ -1,9 +1,9 @@
 import {useCallback, useRef, useState} from "react";
-import {useDispatch} from "react-redux";
+import {useDispatch, useSelector} from "react-redux";
 import toast from "react-hot-toast";
 import {useTranslation} from "react-i18next";
 
-import type {AppDispatch} from "@/store/store";
+import type {AppDispatch, RootState} from "@/store/store";
 import {chatMessagesService} from "@/features/chat/model/services/chatMessages.service.ts";
 import {buildTypingIn} from "@/features/chat/model/schema/wireMessage.schema.ts";
 import {loadDraft, saveDraft, clearDraft} from "@/features/chat/model/drafts.ts";
@@ -17,6 +17,8 @@ type ComposerSummary = {counterpartId: string; orderId?: string} | null | undefi
  * notifier. Behavior preserved verbatim, including the no-summary guard that surfaces an error toast
  * instead of failing silently.
  */
+const EMPTY_SECRET: Record<string, true> = {};   // stable ref → no re-render churn when there are no secret chats
+
 export function useMessageComposer(params: {
     selectedChatId: string | null;
     myId: string;
@@ -25,6 +27,8 @@ export function useMessageComposer(params: {
     const {selectedChatId, myId, getSummary} = params;
     const dispatch = useDispatch<AppDispatch>();
     const {t} = useTranslation();
+    const secretIds = useSelector((s: RootState) => s.secretChats?.byId ?? EMPTY_SECRET);
+    const isSecretChat = useCallback((id: string) => !!secretIds[id], [secretIds]);
     // Seed from the persisted draft for the initially-selected chat (e.g. a deep-link open).
     const [messageInput, setMessageInputRaw] = useState(() => selectedChatId ? loadDraft(selectedChatId) : "");
 
@@ -54,12 +58,13 @@ export function useMessageComposer(params: {
         }
         setMessageInputRaw("");
         clearDraft(selectedChatId);
-        chatMessagesService.enqueueChatMessage(
-            dispatch, text, myId, selectedChatId, summary.counterpartId, summary.orderId
+        const secret = isSecretChat(selectedChatId);
+        void chatMessagesService.enqueueChatMessage(
+            dispatch, text, myId, selectedChatId, summary.counterpartId, summary.orderId, secret
         );
         // A new message is naturally "not read yet": its createdAt is above the peer's read
         // watermark, so it renders ✓ until a READ_OUT advances the watermark past it. No global reset.
-    }, [selectedChatId, getSummary, myId, dispatch, t]);
+    }, [selectedChatId, getSummary, myId, dispatch, t, isSecretChat]);
 
     // Throttled "I'm typing" notifier (TYPING_IN → peer's TYPING_OUT). Called on input change.
     const lastTypingRef = useRef(0);

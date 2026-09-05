@@ -4,6 +4,7 @@ import {useTranslation} from "react-i18next";
 import type {AppDispatch, RootState} from "@/store/store";
 import type {Contact} from "@/entities/contact";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
+import {setSecret} from "@/features/chat/model/slices/secretChatsSlice.ts";
 import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {useWindowedHistory} from "@/features/chat/hooks/useWindowedHistory.ts";
@@ -90,6 +91,9 @@ function ChatWindow({
     // chatUi. A sent message shows ✓✓ iff its id <= this (ULID lexicographic == chronological).
     const peerLastReadId = useSelector((state: RootState) =>
         selectedChatId ? (state.chatUi.peerLastReadIdByChat[selectedChatId] ?? "") : ""
+    );
+    const secret = useSelector((state: RootState) =>
+        !!(selectedChatId && state.secretChats.byId[selectedChatId])
     );
     const peerTyping = useSelector((state: RootState) =>
         selectedChatId ? !!state.chatUi.typingByChat[selectedChatId] : false
@@ -250,6 +254,10 @@ function ChatWindow({
                 onAudioCall={onAudioCall}
                 onToggleBlock={onToggleBlock}
                 onDeleteChat={onDeleteChat}
+                secret={secret}
+                onToggleSecret={!isGroup && selectedChatId
+                    ? () => dispatch(setSecret({conversationId: selectedChatId, secret: !secret}))
+                    : undefined}
             />
 
             <MessageList

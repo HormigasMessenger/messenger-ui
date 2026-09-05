@@ -25,7 +25,8 @@ const enc = new TextEncoder(), dec = new TextDecoder();
 
 export class SignalStore implements StorageType {
     // dbName is parameterized so tests can isolate two "devices"; prod uses the single default.
-    constructor(private dbName = "e2ee-signal") {}
+    private dbName: string;
+    constructor(dbName = "e2ee-signal") { this.dbName = dbName; }
     private db(): Promise<IDBPDatabase> {
         return openDB(this.dbName, V, {
             upgrade(d) {

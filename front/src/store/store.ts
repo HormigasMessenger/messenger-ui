@@ -8,6 +8,7 @@ import chatUiReducer from "@/features/chat/model/slices/chatUiSlice";
 import outboxReducer, { hydrateOutbox, markPersisted } from "@/features/chat/model/slices/outboxSlice";
 import presenceReducer from "@/features/presence/model/presenceSlice";
 import stickyChatsReducer, { saveStickyChats } from "@/features/chat/model/slices/stickyChatsSlice";
+import secretChatsReducer, { saveSecretChats } from "@/features/chat/model/slices/secretChatsSlice";
 
 // Middleware
 import { createCallMiddleware } from "@/features/call/middleware/callMiddleware";
@@ -35,6 +36,7 @@ export function configureAppStore(webRTCService: WebRTCService) {
             chatUi: chatUiReducer,
             presence: presenceReducer,
             stickyChats: stickyChatsReducer,
+            secretChats: secretChatsReducer,
             [chatApi.reducerPath]: chatApi.reducer,
             [contactsApi.reducerPath]: contactsApi.reducer,
             [idsApi.reducerPath]: idsApi.reducer,
@@ -87,6 +89,13 @@ export function configureAppStore(webRTCService: WebRTCService) {
     store.subscribe(() => {
         const cur = store.getState().stickyChats.byId;
         if (cur !== lastSticky) { lastSticky = cur; saveStickyChats(cur); }
+    });
+
+    // Persist the secret-chat set the same way (survives reloads).
+    let lastSecret = store.getState().secretChats.byId;
+    store.subscribe(() => {
+        const cur = store.getState().secretChats.byId;
+        if (cur !== lastSecret) { lastSecret = cur; saveSecretChats(cur); }
     });
 
     webRTCService.setSendCallback((data) => {

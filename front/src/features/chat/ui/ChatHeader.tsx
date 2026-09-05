@@ -22,6 +22,8 @@ export function ChatHeader({
     onAudioCall,
     onToggleBlock,
     onDeleteChat,
+    secret,
+    onToggleSecret,
 }: {
     chat: Contact | null;
     isGroup?: boolean;
@@ -37,6 +39,8 @@ export function ChatHeader({
     onAudioCall: () => void;
     onToggleBlock?: () => void;
     onDeleteChat: () => void;
+    secret?: boolean;
+    onToggleSecret?: () => void;
 }) {
     const {t} = useTranslation();
     return (
@@ -92,6 +96,18 @@ export function ChatHeader({
                         className="hover:opacity-80 p-1"
                     >
                         <PhoneIcon/>
+                    </button>
+                )}
+
+                {!isGroup && onToggleSecret && (
+                    <button
+                        onClick={onToggleSecret}
+                        title={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
+                        aria-label={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
+                        aria-pressed={secret}
+                        className={`p-1 text-lg ${secret ? "opacity-100" : "opacity-60 hover:opacity-90"}`}
+                    >
+                        {secret ? "🔒" : "🔓"}
                     </button>
                 )}
 

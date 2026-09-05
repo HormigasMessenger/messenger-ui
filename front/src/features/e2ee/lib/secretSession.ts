@@ -65,7 +65,7 @@ export async function encryptTo(store: SignalStore, peerUserId: string, myDevice
     for (const dev of deviceIds) {
         const cipher = new SessionCipher(store, addrOf(peerUserId, dev));
         const msg = await cipher.encrypt(bytes);                  // {type, body}
-        to[dev] = { t: msg.type, b: b64(binaryStringToBuffer(msg.body)) };
+        to[dev] = { t: msg.type, b: b64(binaryStringToBuffer(msg.body ?? "")) };
     }
     return { v: ENVELOPE_V, alg: "signal", from: myDeviceId, to };
 }

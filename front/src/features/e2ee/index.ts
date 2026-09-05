@@ -3,6 +3,7 @@ export {ensureProvisioned, maybeReplenish} from "./lib/provisioning.ts";
 export {SignalStore} from "./lib/signalStore.ts";
 export {clearDeviceKey} from "./lib/deviceKey.ts";
 export {selfCount} from "./lib/keyDirectory.ts";
+export {encryptForSend, decryptReceived, isSecretEnvelope} from "./lib/secretChat.ts";
 
 import {ensureProvisioned, maybeReplenish} from "./lib/provisioning.ts";
 import {selfCount} from "./lib/keyDirectory.ts";
