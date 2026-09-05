@@ -27,7 +27,8 @@ export interface FetchResponse { userId: string; devices: DeviceBundle[] }
 export interface CountResponse { deviceId: string; oneTimePreKeysRemaining: number }
 
 class KeyDirectoryError extends Error {
-    constructor(public status: number, msg: string) { super(msg); this.name = "KeyDirectoryError"; }
+    status: number;
+    constructor(status: number, msg: string) { super(msg); this.name = "KeyDirectoryError"; this.status = status; }
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
