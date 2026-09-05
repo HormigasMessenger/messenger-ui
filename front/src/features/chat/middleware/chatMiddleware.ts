@@ -13,6 +13,7 @@ import {logger} from "@/shared/logger/logger.ts";
 import {playNotificationSound} from "@/shared/sound/notify.ts";
 import {showDesktopNotification} from "@/features/notifications";
 import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
+import {savePlaintext, loadPlaintext} from "@/features/e2ee/lib/atRest.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -27,6 +28,29 @@ const TYPING_TIMEOUT_MS = 4000;
  */
 export const chatMiddleware: Middleware = (store) => (next) => (action) => {
     const result = next(action);
+
+    // History (re)load: the REST/cache rows carry the raw E2EE envelope (the ratchet key is already
+    // consumed, so re-decrypting is impossible). Restore each secret message's text from the at-rest
+    // plaintext store — decrypted once on receipt / stashed at send. Missing → "🔒 unavailable".
+    if (chatApi.endpoints?.getChatHistory?.matchFulfilled?.(action)) {
+        const {myId, chatId} = action.meta.arg.originalArgs as {myId: string; chatId: string};
+        const rows = action.payload as Array<{id: string; clientId?: string; text: string}>;
+        const secret = rows.filter((m) => isSecretEnvelope(m.text));
+        if (secret.length) {
+            const d = store.dispatch as AppDispatch;
+            void (async () => {
+                for (const m of secret) {
+                    const plain = (await loadPlaintext(m.id)) ?? (m.clientId ? await loadPlaintext(m.clientId) : null);
+                    d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
+                        const row = draft?.find((r) => r.id === m.id);
+                        if (row) row.text = plain ?? i18n.t("chat.decryptUnavailable");
+                    }));
+                }
+            })();
+        }
+        return result;
+    }
+
     const a = action as PayloadAction<WSMessage>;
     if (a?.type !== "ws/incoming") return result;
 
@@ -68,8 +92,8 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                     })
                 );
                 decryptReceived(frame.senderId ?? msg.from, secretBody)
-                    .then((plain) => patch(plain))
-                    .catch(() => patch(i18n.t("chat.decryptUnavailable")));   // dup / gap / no-session
+                    .then((plain) => { patch(plain); void savePlaintext(msg.id, plain); })  // stash for reloaded history
+                    .catch(async () => patch((await loadPlaintext(msg.id)) ?? i18n.t("chat.decryptUnavailable")));
             }
 
             // NOTE: we do NOT infer the peer's read state from an incoming message. Receiving a
