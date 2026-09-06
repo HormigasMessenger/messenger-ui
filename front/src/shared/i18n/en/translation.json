@@ -103,7 +103,9 @@
     "secretOn": "End-to-end encrypted",
     "secretEnableTitle": "Turn on secret chat (end-to-end encryption)",
     "secretDisableTitle": "Turn off secret chat",
-    "peerNoKeys": "This contact hasn't enabled secret chat yet — ask them to open the app, then try again"
+    "peerNoKeys": "This contact hasn't enabled secret chat yet — ask them to open the app, then try again",
+    "decryptLost": "🔒 Lost",
+    "decryptPending": "⏳ Didn't arrive — re-requested"
   },
   "group": {
     "newGroup": "New group",

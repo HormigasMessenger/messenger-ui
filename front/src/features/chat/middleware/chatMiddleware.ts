@@ -29,21 +29,30 @@ const TYPING_TIMEOUT_MS = 4000;
 export const chatMiddleware: Middleware = (store) => (next) => (action) => {
     const result = next(action);
 
-    // History (re)load: the REST/cache rows carry the raw E2EE envelope (the ratchet key is already
-    // consumed, so re-decrypting is impossible). Restore each secret message's text from the at-rest
-    // plaintext store — decrypted once on receipt / stashed at send. Missing → "🔒 unavailable".
+    // History (re)load: rows carry the raw E2EE envelope. For each secret message, restore the text —
+    //   1. from the at-rest plaintext store (decrypted once on receipt / stashed at send), else
+    //   2. (Step A) for an INCOMING message never decrypted live — the offline case, delivered ONLY via
+    //      history — run the ratchet NOW, in history order (skipped-keys align small gaps), and stash it.
+    // Own sent messages can't be ratchet-decrypted (the envelope is encrypted to the PEER), so those rely
+    // on the store only. A hard failure (permanent gap / lost ciphertext) → "🔒 lost" (Step B will attempt
+    // client-to-client recovery before giving up).
     if (chatApi.endpoints?.getChatHistory?.matchFulfilled?.(action)) {
         const {myId, chatId} = action.meta.arg.originalArgs as {myId: string; chatId: string};
-        const rows = action.payload as Array<{id: string; clientId?: string; text: string}>;
+        const rows = action.payload as Array<{id: string; clientId?: string; from?: string; text: string}>;
         const secret = rows.filter((m) => isSecretEnvelope(m.text));
         if (secret.length) {
             const d = store.dispatch as AppDispatch;
             void (async () => {
                 for (const m of secret) {
-                    const plain = (await loadPlaintext(m.id, E2EE_PLAINTEXT_TTL_MS)) ?? (m.clientId ? await loadPlaintext(m.clientId, E2EE_PLAINTEXT_TTL_MS) : null);
+                    let plain = (await loadPlaintext(m.id, E2EE_PLAINTEXT_TTL_MS)) ?? (m.clientId ? await loadPlaintext(m.clientId, E2EE_PLAINTEXT_TTL_MS) : null);
+                    if (plain == null && m.from && m.from !== myId) {
+                        // Never decrypted live → try the ratchet now (in-order over history).
+                        try { plain = await decryptReceived(m.from, m.text); void savePlaintext(m.id, chatId, plain); }
+                        catch { /* permanent gap / lost ciphertext → recovery (Step B) or lost */ }
+                    }
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
-                        if (row) { row.text = plain ?? i18n.t("chat.decryptUnavailable"); row.secret = true; }
+                        if (row) { row.text = plain ?? i18n.t("chat.decryptLost"); row.secret = true; }
                     }));
                 }
             })();

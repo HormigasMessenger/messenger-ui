@@ -103,7 +103,9 @@
     "secretOn": "Cifrado de extremo a extremo",
     "secretEnableTitle": "Activar chat secreto (cifrado de extremo a extremo)",
     "secretDisableTitle": "Desactivar chat secreto",
-    "peerNoKeys": "Este contacto aún no activó el chat secreto — pídele que abra la app y vuelve a intentar"
+    "peerNoKeys": "Este contacto aún no activó el chat secreto — pídele que abra la app y vuelve a intentar",
+    "decryptLost": "🔒 Perdido",
+    "decryptPending": "⏳ No llegó — re-solicitado"
   },
   "group": {
     "newGroup": "Nuevo grupo",
