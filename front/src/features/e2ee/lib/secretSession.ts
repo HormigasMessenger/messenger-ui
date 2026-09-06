@@ -92,6 +92,63 @@ export async function decryptFrom(store: SignalStore, senderUserId: string, myDe
     return new TextDecoder().decode(plain);
 }
 
+// --- Recovery over an ORTHOGONAL session (Step B fix) ------------------------------------------------
+// A stalled ratchet can't be repaired by another message ON that ratchet — the repair lands past the same
+// gap. So recovery rides a DEDICATED, always-FRESH session at a distinct address, independent of the
+// normal (possibly-stalled) chain. Each recovery batch tears down + re-establishes the recovery session
+// via X3DH, so its first message is a prekey message and the receiver builds a clean receive chain — no
+// gap to cross. The recovered plaintext is AEAD-BOUND to its identity: {mid, cid} travel INSIDE the
+// encryption, so a tampered response can't relabel one message as another.
+
+const RECOVERY_DEVICE_ID = 0x5EC0;    // a distinct address lane, never colliding with the normal session
+const recAddr = (userId: string) => new SignalProtocolAddress(userId, RECOVERY_DEVICE_ID);
+
+export interface RecoverCipher { mid: string; t: number; b: string }
+
+/** Sender side: establish a FRESH recovery session to `peerUserId` and encrypt each item, binding it to
+ * (messageId, chatId) inside the ciphertext. Returns per-message ciphertexts, or [] if the peer has no keys. */
+export async function encryptRecovery(store: SignalStore, peerUserId: string, chatId: string, items: Array<{mid: string; text: string}>): Promise<RecoverCipher[]> {
+    const {devices} = await fetchUserKeys(peerUserId);
+    if (devices.length === 0) return [];
+    const dev = devices[0];                         // 1:1 — first device
+    const addr = recAddr(peerUserId);
+    await store.deleteSession(addr.toString());     // FRESH — never ride a stalled chain
+    const builder = new SessionBuilder(store, addr);
+    await builder.processPreKey({
+        registrationId: addrDeviceNum(dev.deviceId),
+        identityKey: unb64(dev.identityKey),
+        signedPreKey: {keyId: dev.signedPreKey.id, publicKey: unb64(dev.signedPreKey.publicKey), signature: unb64(dev.signedPreKey.signature)},
+        preKey: dev.oneTimePreKey ? {keyId: dev.oneTimePreKey.id, publicKey: unb64(dev.oneTimePreKey.publicKey)} : undefined,
+    });
+    const cipher = new SessionCipher(store, addr);
+    const out: RecoverCipher[] = [];
+    for (const it of items) {
+        const bound = JSON.stringify({v: 1, mid: it.mid, cid: chatId, t: it.text});   // binding is INSIDE the AEAD
+        const msg = await cipher.encrypt(new TextEncoder().encode(bound).buffer);
+        out.push({mid: it.mid, t: msg.type, b: b64(binaryStringToBuffer(msg.body ?? ""))});
+    }
+    return out;
+}
+
+/** Receiver side: decrypt recovery ciphertexts on the recovery session and VERIFY the binding. Returns
+ * only items whose embedded (mid, cid) match the claim + the expected chat — a mislabelled item is dropped. */
+export async function decryptRecovery(store: SignalStore, senderUserId: string, expectedChatId: string, items: RecoverCipher[]): Promise<Array<{mid: string; text: string}>> {
+    const cipher = new SessionCipher(store, recAddr(senderUserId));
+    const out: Array<{mid: string; text: string}> = [];
+    for (const it of items) {
+        try {
+            const body = bufferToBinaryString(unb64(it.b));
+            const plain = it.t === 3
+                ? await cipher.decryptPreKeyWhisperMessage(body, "binary")
+                : await cipher.decryptWhisperMessage(body, "binary");
+            const obj = JSON.parse(new TextDecoder().decode(plain)) as {mid?: string; cid?: string; t?: string};
+            if (obj.cid !== expectedChatId || obj.mid !== it.mid || typeof obj.t !== "string") continue;   // binding check
+            out.push({mid: it.mid, text: obj.t});
+        } catch { /* undecryptable / tampered → skip */ }
+    }
+    return out;
+}
+
 // libsignal ciphertext bodies are binary STRINGS; convert to/from bytes for base64 transport.
 function binaryStringToBuffer(s: string): ArrayBuffer {
     const b = new Uint8Array(s.length);

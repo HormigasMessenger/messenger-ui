@@ -103,6 +103,8 @@ export class SignalStore implements StorageType {
     async storeSession(addr: string, record: SessionRecordType): Promise<void> {
         await (await this.db()).put(SESSIONS, await wrapBytes(enc.encode(record).buffer), addr);
     }
+    /** Drop a session so the next handshake starts FRESH — used by recovery to avoid riding a stalled chain. */
+    async deleteSession(addr: string): Promise<void> { await (await this.db()).delete(SESSIONS, addr); }
 
     // --- wipe (logout) ---
     async clear(): Promise<void> {

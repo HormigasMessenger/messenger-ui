@@ -95,10 +95,10 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
                 })();
                 return result;
             }
-            if (f?.type === RECOVER_RESP && f.from && Array.isArray(f.items)) {
+            if (f?.type === RECOVER_RESP && f.from && f.conversationId && Array.isArray(f.items)) {
                 void (async () => {
                     try {
-                        const recovered = await applyResponse(f.from!, f.items!);
+                        const recovered = await applyResponse(f.from!, f.conversationId!, f.items!);
                         const pend = await allPending();
                         const byClient = new Map(pend.map((p) => [p.clientId, p]));
                         for (const {forClientId, plaintext} of recovered) {

@@ -110,9 +110,24 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                         if (row) row.text = text;
                     })
                 );
-                decryptReceived(frame.senderId ?? msg.from, secretBody)
-                    .then((plain) => { patch(plain); void savePlaintext(msg.id, chatId, plain); })  // stash for reloaded history
-                    .catch(async () => patch((await loadPlaintext(msg.id)) ?? i18n.t("chat.decryptUnavailable")));
+                const cid = msg.clientId;
+                void (async () => {
+                    // Durable dedup FIRST: the Double Ratchet consumes each message key exactly once, so
+                    // re-decrypting a redelivered ciphertext (lost-ACK resend, or live+history overlap) throws
+                    // a dup-reject. If we already hold the plaintext — under this server id OR the sender's
+                    // stable client id — reuse it and never touch the ratchet.
+                    const seen = (await loadPlaintext(msg.id, E2EE_PLAINTEXT_TTL_MS))
+                        ?? (cid ? await loadPlaintext(cid, E2EE_PLAINTEXT_TTL_MS) : null);
+                    if (seen != null) { patch(seen); return; }
+                    try {
+                        const plain = await decryptReceived(frame.senderId ?? msg.from, secretBody);
+                        patch(plain);
+                        void savePlaintext(msg.id, chatId, plain);              // for reloaded history (by server id)
+                        if (cid) void savePlaintext(cid, chatId, plain);        // + by client id, so a resend dedups
+                    } catch {
+                        patch((await loadPlaintext(msg.id)) ?? i18n.t("chat.decryptUnavailable"));
+                    }
+                })();
             }
 
             // NOTE: we do NOT infer the peer's read state from an incoming message. Receiving a
