@@ -186,6 +186,8 @@
     "wsStatus": "WebSocket",
     "reconnects": "Reconnects (10 min)",
     "close": "Close",
-    "openInfo": "App info"
+    "openInfo": "App info",
+    "other": "Other / caches",
+    "reconnects20": "Reconnects — last 20 min"
   }
 }

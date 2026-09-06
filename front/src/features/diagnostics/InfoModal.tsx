@@ -2,7 +2,7 @@ import {useEffect, useState} from "react";
 import {useSelector} from "react-redux";
 import {useTranslation} from "react-i18next";
 import type {RootState} from "@/store/store";
-import {appVersion, buildTime, getLoginAt, connectsInLast} from "@/shared/diag/diag.ts";
+import {appVersion, buildTime, getLoginAt, connectsInLast, connectBuckets} from "@/shared/diag/diag.ts";
 import {mediaStats} from "@/features/chat/db/db.ts";
 import {cryptoStats, type CryptoStats} from "@/features/e2ee";
 
@@ -27,6 +27,42 @@ function Row({label, value, mono}: {label: string; value: string | number; mono?
         </div>
     );
 }
+// Tiny bar sparkline (reconnect activity over time), endpoint emphasized.
+function Sparkline({data}: {data: number[]}) {
+    const max = Math.max(1, ...data);
+    const w = 5;
+    return (
+        <svg viewBox={`0 0 ${data.length * w} 22`} preserveAspectRatio="none" className="w-full h-6" aria-hidden>
+            {data.map((v, i) => {
+                const h = (v / max) * 20;
+                return <rect key={i} x={i * w} y={22 - h} width={w - 1.4} height={Math.max(v ? 1.5 : 0, h)} rx={0.8}
+                             className={i === data.length - 1 ? "fill-teal-700" : "fill-teal-400"}/>;
+            })}
+        </svg>
+    );
+}
+
+// Stacked storage breakdown by category.
+function StackedBar({segs, total}: {segs: {label: string; bytes: number; cls: string}[]; total: number}) {
+    const t = Math.max(1, total);
+    return (
+        <div className="py-2">
+            <div className="h-2.5 rounded-full overflow-hidden flex bg-teal-100">
+                {segs.map((s) => s.bytes > 0 && (
+                    <div key={s.label} className={s.cls} style={{width: `${(s.bytes / t) * 100}%`}} title={s.label}/>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5 text-[11px] text-teal-700">
+                {segs.map((s) => (
+                    <span key={s.label} className="inline-flex items-center gap-1">
+                        <span className={`inline-block w-2 h-2 rounded-sm ${s.cls}`}/>{s.label}
+                    </span>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 function Section({title, children}: {title: string; children: React.ReactNode}) {
     return (
         <div className="mb-4">
@@ -76,13 +112,13 @@ export function InfoModal({onClose}: {onClose: () => void}) {
                 </Section>
 
                 <Section title={t("info.storage")}>
-                    <div className="py-2">
-                        <div className="flex justify-between text-sm mb-1"><span className="text-teal-700">{t("info.used")}</span>
-                            <span className="text-teal-950">{store ? `${fmtBytes(store.usage)} / ${fmtBytes(store.quota)}` : "…"}</span></div>
-                        <div className="h-2 rounded-full bg-teal-100 overflow-hidden">
-                            <div className="h-full bg-teal-600 rounded-full transition-[width]" style={{width: `${usagePct}%`}}/>
-                        </div>
-                    </div>
+                    <div className="flex justify-between text-sm pt-1"><span className="text-teal-700">{t("info.used")}</span>
+                        <span className="text-teal-950">{store ? `${fmtBytes(store.usage)} / ${fmtBytes(store.quota)} (${usagePct.toFixed(0)}%)` : "…"}</span></div>
+                    <StackedBar total={store?.usage ?? 0} segs={[
+                        {label: t("info.files"), bytes: media?.fileBytes ?? 0, cls: "bg-teal-600"},
+                        {label: t("info.secretMsgs"), bytes: crypto?.secretBytes ?? 0, cls: "bg-amber-500"},
+                        {label: t("info.other"), bytes: Math.max(0, (store?.usage ?? 0) - (media?.fileBytes ?? 0) - (crypto?.secretBytes ?? 0)), cls: "bg-teal-300"},
+                    ]}/>
                     <Row label={t("info.persisted")} value={store ? (store.persisted ? "✓" : "✕") : "…"}/>
                     <Row label={t("info.files")} value={media ? `${media.files} · ${fmtBytes(media.fileBytes)}` : "…"}/>
                     <Row label={t("info.messages")} value={media ? `${media.messages} · ${media.chats} ${t("info.chats")}` : "…"}/>
@@ -100,6 +136,10 @@ export function InfoModal({onClose}: {onClose: () => void}) {
                 <Section title={t("info.connection")}>
                     <Row label={t("info.wsStatus")} value={wsStatus}/>
                     <Row label={t("info.reconnects")} value={connectsInLast(10 * 60 * 1000)}/>
+                    <div className="py-1.5">
+                        <div className="text-[11px] text-teal-600 mb-1">{t("info.reconnects20")}</div>
+                        <Sparkline data={connectBuckets(20 * 60 * 1000, 20)}/>
+                    </div>
                 </Section>
 
                 <button onClick={onClose} className="w-full mt-1 py-2 text-teal-700 text-sm hover:underline">{t("info.close")}</button>

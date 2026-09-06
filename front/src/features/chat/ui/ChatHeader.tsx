@@ -1,6 +1,6 @@
 import {useTranslation} from "react-i18next";
 import type {Contact} from "@/entities/contact";
-import {PhoneIcon, VideoIcon} from "@/shared/ui/icons.tsx";
+import {PhoneIcon, VideoIcon, KeyIcon, FingerprintIcon} from "@/shared/ui/icons.tsx";
 
 /**
  * Chat window header: counterpart name + presence line (typing / online / last-seen / offline) and
@@ -106,22 +106,22 @@ export function ChatHeader({
                         onClick={onOpenSafety}
                         title={t("chat.safetyVerifyTitle")}
                         aria-label={t("chat.safetyVerifyTitle")}
-                        className="p-1 text-base opacity-70 hover:opacity-100"
+                        className="p-1 hover:opacity-80"
                     >
-                        ✓
+                        <FingerprintIcon width={20} height={20}/>
                     </button>
                 )}
 
-                {/* Secret-chat toggle: a KEY, bright when on, dimmed (deactivated) when off. */}
+                {/* Secret-chat toggle: a schematic KEY — struck through when off (no encryption). */}
                 {!isGroup && onToggleSecret && (
                     <button
                         onClick={onToggleSecret}
                         title={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
                         aria-label={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
                         aria-pressed={secret}
-                        className={`p-1 text-lg transition-opacity ${secret ? "opacity-100" : "opacity-40 hover:opacity-70"}`}
+                        className={`p-1 transition-opacity ${secret ? "opacity-100" : "opacity-55 hover:opacity-80"}`}
                     >
-                        🔑
+                        <KeyIcon width={20} height={20} struck={!secret}/>
                     </button>
                 )}
 

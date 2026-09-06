@@ -39,6 +39,33 @@ export function VideoIcon(props: SVGProps<SVGSVGElement>) {
     );
 }
 
+/** Encryption — a schematic key (ring + shaft + teeth). `struck` draws a diagonal line through it to mean
+ * "off / no encryption". Line style matches the call/mic icons. */
+export function KeyIcon({struck, ...props}: SVGProps<SVGSVGElement> & {struck?: boolean}) {
+    return (
+        <svg {...base(props)}>
+            <circle cx="7" cy="16.6" r="4.4"/>
+            <path d="M10.1 13.5 L20.5 3"/>
+            <path d="M16.3 6.8 l2.6 2.6"/>
+            <path d="M18.7 4.4 l2.6 2.6"/>
+            {struck && <line x1="3.2" y1="3.2" x2="20.8" y2="20.8"/>}
+        </svg>
+    );
+}
+
+/** Verify identity — a fingerprint (concentric ridges). For safety-number verification. */
+export function FingerprintIcon(props: SVGProps<SVGSVGElement>) {
+    return (
+        <svg {...base(props)}>
+            <path d="M5 11a7 7 0 0 1 13.5-2.5"/>
+            <path d="M8 12a4 4 0 0 1 8 0v3.5"/>
+            <path d="M12 12v5"/>
+            <path d="M5.5 14.5v2.5"/>
+            <path d="M18.5 12v4.5"/>
+        </svg>
+    );
+}
+
 /** Record a voice message — microphone. */
 export function MicIcon(props: SVGProps<SVGSVGElement>) {
     return (

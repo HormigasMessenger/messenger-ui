@@ -22,7 +22,12 @@ export function getDeviceKey(): Promise<CryptoKey> {
     if (!keyp) keyp = (async () => {
         const d = await db();
         const existing = (await d.get(STORE, KEY)) as CryptoKey | undefined;
-        if (existing) return existing;
+        if (existing) {
+            // Backfill createdAt for keys made before this field existed (so the info page has a value —
+            // "first seen", approximate but stable).
+            if (!(await d.get(STORE, "createdAt"))) await d.put(STORE, Date.now(), "createdAt");
+            return existing;
+        }
         const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false /* non-extractable */, ["encrypt", "decrypt"]);
         await d.put(STORE, key, KEY);
         await d.put(STORE, Date.now(), "createdAt");   // for the info page

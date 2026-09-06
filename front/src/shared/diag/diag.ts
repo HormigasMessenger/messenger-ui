@@ -20,6 +20,17 @@ export function connectsInLast(ms: number): number {
     return connects.filter((t) => t >= cutoff).length;
 }
 
+/** Connect counts split into `buckets` equal time slices over the last `windowMs` — for a sparkline. */
+export function connectBuckets(windowMs: number, buckets: number): number[] {
+    const now = Date.now(), start = now - windowMs, size = windowMs / buckets;
+    const out = new Array(buckets).fill(0) as number[];
+    for (const t of connects) {
+        if (t < start || t > now) continue;
+        out[Math.min(buckets - 1, Math.floor((t - start) / size))]++;
+    }
+    return out;
+}
+
 let loginAt = 0;
 /** Mark the session start (first successful auth this page load). Idempotent. */
 export function markLogin(): void { if (!loginAt) loginAt = Date.now(); }
