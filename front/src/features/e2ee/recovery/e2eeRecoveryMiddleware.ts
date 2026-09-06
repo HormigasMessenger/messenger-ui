@@ -3,6 +3,7 @@ import {chatApi} from "@/features/chat/rest/chatApi.ts";
 import {logger} from "@/shared/logger/logger.ts";
 import i18n from "@/shared/i18n";
 import {savePlaintext} from "../lib/atRest.ts";
+import {secretStateKey} from "../lib/failure.ts";
 import {addPending, allPending, bumpAttempt, removePending, type PendingItem} from "./pendingStore.ts";
 import {RECOVER_REQ, RECOVER_RESP, buildRequest, buildResponse, applyResponse, type RecoverReq, type RecoverResp} from "./protocol.ts";
 
@@ -63,7 +64,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         const now = Date.now();
         const pend = await allPending();
         const exhausted = pend.filter((p) => p.attempts >= RETRY_MAX);
-        for (const p of exhausted) { patchRow(p.chatId, p.serverId, i18n.t("chat.decryptLost")); await removePending(p.clientId); }
+        for (const p of exhausted) { patchRow(p.chatId, p.serverId, i18n.t(secretStateKey("lost"))); await removePending(p.clientId); }
         const due = pend.filter((p) => p.attempts < RETRY_MAX && now - p.lastAt > RETRY_BASE_MS * Math.pow(RETRY_FACTOR, p.attempts));
         if (due.length) await sendRequestsFor(due);
     };

@@ -5,9 +5,10 @@
 // (messageId, chatId). Same node-realm harness as secretSession.test (jsdom's second realm breaks X3DH).
 import "fake-indexeddb/auto";
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
+import {SignalProtocolAddress} from "@privacyresearch/libsignal-protocol-typescript";
 import {SignalStore} from "../signalStore";
 import {ensureProvisioned} from "../provisioning";
-import {encryptTo, decryptFrom, encryptRecovery, decryptRecovery} from "../secretSession";
+import {encryptTo, decryptFrom, encryptRecovery, decryptRecovery, RECOVERY_DEVICE_ID} from "../secretSession";
 
 type Bundle = { deviceId: string; identityKey: string; signedPreKey: {id:number;publicKey:string;signature:string}; oneTimePreKeys: {id:number;publicKey:string}[] };
 const dir: Record<string, Bundle[]> = {};
@@ -72,6 +73,15 @@ describe("recovery — orthogonal session, AEAD-bound", () => {
         const ciphers = await encryptRecovery(alice.store, "bob", "chatX", [{mid: "missed", text: "the lost line"}]);
         const out = await decryptRecovery(bob.store, "alice", "chatX", ciphers);
         expect(out).toEqual([{mid: "missed", text: "the lost line"}]);
+    });
+
+    it("tears down the receiver's recovery lane after a batch (bounded, no archive buildup)", async () => {
+        const alice = await provisionAs("alice", "e2ee-rec-lane-a");
+        const bob = await provisionAs("bob", "e2ee-rec-lane-b");
+        const ciphers = await encryptRecovery(alice.store, "bob", "c", [{mid: "1", text: "x"}]);
+        await decryptRecovery(bob.store, "alice", "c", ciphers);
+        const laneAddr = new SignalProtocolAddress("alice", RECOVERY_DEVICE_ID).toString();
+        expect(await bob.store.loadSession(laneAddr)).toBeUndefined();   // cleaned up
     });
 
     it("repeated recovery batches each re-establish a fresh session", async () => {

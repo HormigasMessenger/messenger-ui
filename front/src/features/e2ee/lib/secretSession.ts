@@ -100,7 +100,7 @@ export async function decryptFrom(store: SignalStore, senderUserId: string, myDe
 // gap to cross. The recovered plaintext is AEAD-BOUND to its identity: {mid, cid} travel INSIDE the
 // encryption, so a tampered response can't relabel one message as another.
 
-const RECOVERY_DEVICE_ID = 0x5EC0;    // a distinct address lane, never colliding with the normal session
+export const RECOVERY_DEVICE_ID = 0x5EC0;    // a distinct address lane, never colliding with the normal session
 const recAddr = (userId: string) => new SignalProtocolAddress(userId, RECOVERY_DEVICE_ID);
 
 export interface RecoverCipher { mid: string; t: number; b: string }
@@ -133,7 +133,8 @@ export async function encryptRecovery(store: SignalStore, peerUserId: string, ch
 /** Receiver side: decrypt recovery ciphertexts on the recovery session and VERIFY the binding. Returns
  * only items whose embedded (mid, cid) match the claim + the expected chat — a mislabelled item is dropped. */
 export async function decryptRecovery(store: SignalStore, senderUserId: string, expectedChatId: string, items: RecoverCipher[]): Promise<Array<{mid: string; text: string}>> {
-    const cipher = new SessionCipher(store, recAddr(senderUserId));
+    const addr = recAddr(senderUserId);
+    const cipher = new SessionCipher(store, addr);
     const out: Array<{mid: string; text: string}> = [];
     for (const it of items) {
         try {
@@ -146,6 +147,9 @@ export async function decryptRecovery(store: SignalStore, senderUserId: string, 
             out.push({mid: it.mid, text: obj.t});
         } catch { /* undecryptable / tampered → skip */ }
     }
+    // The recovery lane is one-shot: the sender tears down + re-X3DHs for the NEXT batch, so this session is
+    // now dead. Drop it so the recovery address never accumulates archived states (bounded lane — #19).
+    await store.deleteSession(addr.toString()).catch(() => {});
     return out;
 }
 

@@ -15,6 +15,7 @@ import {showDesktopNotification} from "@/features/notifications";
 import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
 import {savePlaintext, loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "@/features/e2ee/lib/atRest.ts";
 import {reportUndecryptable} from "@/features/e2ee";
+import {classifyDecryptError, isRecoverable, secretStateKey} from "@/features/e2ee/lib/failure.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -58,7 +59,7 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                             if (m.clientId) { toRecover.push({clientId: m.clientId, serverId: m.id}); peerId = m.from; recoverable = true; }
                         }
                     }
-                    const fallback = recoverable ? i18n.t("chat.decryptPending") : i18n.t("chat.decryptLost");
+                    const fallback = i18n.t(secretStateKey(recoverable ? "pending" : "lost"));
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
                         if (row) { row.text = plain ?? fallback; row.secret = true; }
@@ -124,8 +125,21 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                         patch(plain);
                         void savePlaintext(msg.id, chatId, plain);              // for reloaded history (by server id)
                         if (cid) void savePlaintext(cid, chatId, plain);        // + by client id, so a resend dedups
-                    } catch {
-                        patch((await loadPlaintext(msg.id)) ?? i18n.t("chat.decryptUnavailable"));
+                    } catch (e) {
+                        // A stored copy always wins. Otherwise classify: a recoverable gap (past MAX_SKIP, no
+                        // session yet) is handed to client-to-client recovery NOW — the live path used to
+                        // dead-end at "unavailable" and only recover on a later history reload — and shown as
+                        // "⏳ re-requested"; a corrupt/undecodable frame is a plain "unavailable".
+                        const stored = await loadPlaintext(msg.id);
+                        if (stored != null) { patch(stored); return; }
+                        const peerId = frame.senderId ?? msg.from;
+                        const failure = classifyDecryptError(e);
+                        if (cid && peerId && isRecoverable(failure)) {
+                            patch(i18n.t(secretStateKey("pending")));
+                            dispatch(reportUndecryptable({chatId, peerId, items: [{clientId: cid, serverId: msg.id}]}) as never);
+                        } else {
+                            patch(i18n.t(secretStateKey("unavailable")));
+                        }
                     }
                 })();
             }
