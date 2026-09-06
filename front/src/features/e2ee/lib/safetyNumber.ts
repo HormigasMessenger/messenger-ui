@@ -1,5 +1,6 @@
 import {FingerprintGenerator} from "@privacyresearch/libsignal-protocol-typescript";
 import {ensureProvisioned} from "./provisioning.ts";
+import {b64} from "./deviceKey.ts";
 
 // Safety numbers (Signal's out-of-band MITM check). A fingerprint derived from BOTH parties' public
 // identity keys — identical on both sides IFF neither key was substituted by the (trusted) key directory
@@ -14,18 +15,27 @@ const ITERATIONS = 1024;
 
 /** The safety number for the current user ↔ peerUserId, or null if the peer's identity isn't known yet
  * (no secret session established). Symmetric — both sides compute the same string. */
+const numCache = new Map<string, string>();   // cacheKey (peer + both identity fingerprints) → number
+
 export async function computeSafetyNumber(myUserId: string, peerUserId: string): Promise<string | null> {
     try {
         const {store} = await ensureProvisioned();
         const mine = await store.getIdentityKeyPair();
         const theirs = await store.getPeerIdentity(peerUserId);
         if (!mine || !theirs) return null;
+        // The number is deterministic in the two identity keys — cache it (the 1024-round hash is otherwise
+        // recomputed on every open, ~half a second). The key includes both identities so a key CHANGE busts it.
+        const cacheKey = `${peerUserId}:${b64(mine.pubKey).slice(0, 22)}:${b64(theirs).slice(0, 22)}`;
+        const hit = numCache.get(cacheKey);
+        if (hit) return hit;
         const fp = new FingerprintGenerator(ITERATIONS);
         // Order the two ids so both sides produce the SAME number regardless of who computes it.
         const [a, ak, b, bk] = myUserId < peerUserId
             ? [myUserId, mine.pubKey, peerUserId, theirs]
             : [peerUserId, theirs, myUserId, mine.pubKey];
-        return fp.createFor(a, ak, b, bk);
+        const num = await fp.createFor(a, ak, b, bk);
+        numCache.set(cacheKey, num);
+        return num;
     } catch { return null; }
 }
 
