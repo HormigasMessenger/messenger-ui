@@ -148,12 +148,16 @@ async function showChatNotification(payload) {
     // it clear it's a call, so the name alone as the title reads cleanly.)
     const nm = await cachedName(data.senderId);
     const title = nm || (payload && payload.title) || (isCall ? "Incoming call" : "New message");
+    // A Web Push for a SECRET message carries the opaque ciphertext envelope as its body (the backend can't
+    // decrypt it). Never show that — replace it with a generic "encrypted message" line.
+    let bodyText = (payload && payload.body) || (isCall ? "is calling you…" : "You have a new message");
+    if (typeof bodyText === "string" && bodyText.indexOf("E2EE1:") !== -1) bodyText = "🔒 Encrypted message";
     // A call gets its OWN tag so it never collapses into a message notification for the same chat.
     const tag = isCall
         ? "call:" + (data.conversationId || "chat")
         : ((payload && payload.tag) || data.conversationId || "chat-message");
     const options = {
-        body: (payload && payload.body) || (isCall ? "is calling you…" : "You have a new message"),
+        body: bodyText,
         icon: SCOPE_PATH + "pwa-192x192.png",
         badge: SCOPE_PATH + "pwa-192x192.png",
         tag,               // one notification per conversation (calls: per conversation, distinct)

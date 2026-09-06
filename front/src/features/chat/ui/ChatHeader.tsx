@@ -106,21 +106,22 @@ export function ChatHeader({
                         onClick={onOpenSafety}
                         title={t("chat.safetyVerifyTitle")}
                         aria-label={t("chat.safetyVerifyTitle")}
-                        className="p-1 text-lg opacity-70 hover:opacity-100"
+                        className="p-1 text-base opacity-70 hover:opacity-100"
                     >
-                        🛡️
+                        ✓
                     </button>
                 )}
 
+                {/* Secret-chat toggle: a KEY, bright when on, dimmed (deactivated) when off. */}
                 {!isGroup && onToggleSecret && (
                     <button
                         onClick={onToggleSecret}
                         title={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
                         aria-label={secret ? t("chat.secretDisableTitle") : t("chat.secretEnableTitle")}
                         aria-pressed={secret}
-                        className={`p-1 text-lg ${secret ? "opacity-100" : "opacity-60 hover:opacity-90"}`}
+                        className={`p-1 text-lg transition-opacity ${secret ? "opacity-100" : "opacity-40 hover:opacity-70"}`}
                     >
-                        {secret ? "🔒" : "🔓"}
+                        🔑
                     </button>
                 )}
 
