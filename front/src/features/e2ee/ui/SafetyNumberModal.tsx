@@ -37,7 +37,7 @@ export function SafetyNumberModal({myUserId, peerUserId, peerName, onClose}: {
                 <p className="text-sm text-teal-800 mt-1">{t("chat.safetyDesc", {name: peerName})}</p>
 
                 {num === undefined ? (
-                    <div className="my-6 text-center text-teal-600 text-sm">{t("chat.decrypting")}</div>
+                    <div className="my-6 text-center text-teal-600 text-sm">{t("chat.safetyComputing")}</div>
                 ) : num === null ? (
                     <div className="my-6 text-center text-amber-700 text-sm">{t("chat.safetyUnknown")}</div>
                 ) : (

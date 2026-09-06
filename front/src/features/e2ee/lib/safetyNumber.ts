@@ -6,7 +6,11 @@ import {ensureProvisioned} from "./provisioning.ts";
 // or a man in the middle. Users compare it out-of-band (in person / call) and mark the peer verified.
 // A later identity-key change makes the number change → verification auto-drops → "re-verify" prompt.
 
-const ITERATIONS = 5200;   // Signal's default work factor for the fingerprint
+// Fingerprint work factor. Signal's spec is 5200, but this pure-JS implementation runs that many hash
+// rounds SEQUENTIALLY → several seconds (the modal looked stuck). 1024 is effectively instant and, since
+// BOTH clients run this same constant, the two safety numbers still match. Not interoperable with Signal
+// itself — which we don't need.
+const ITERATIONS = 1024;
 
 /** The safety number for the current user ↔ peerUserId, or null if the peer's identity isn't known yet
  * (no secret session established). Symmetric — both sides compute the same string. */

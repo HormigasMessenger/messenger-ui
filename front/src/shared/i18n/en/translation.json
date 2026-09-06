@@ -113,7 +113,9 @@
     "safetyUnverify": "Remove verification",
     "safetyUnknown": "Send a secret message first to establish keys, then verify.",
     "safetyClose": "Close",
-    "safetyVerifyTitle": "Verify safety number"
+    "safetyVerifyTitle": "Verify safety number",
+    "safetyComputing": "Computing safety number…",
+    "moreActions": "More"
   },
   "group": {
     "newGroup": "New group",

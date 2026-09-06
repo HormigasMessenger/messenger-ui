@@ -113,7 +113,9 @@
     "safetyUnverify": "Quitar verificación",
     "safetyUnknown": "Envía un mensaje secreto primero para establecer las claves, luego verifica.",
     "safetyClose": "Cerrar",
-    "safetyVerifyTitle": "Verificar número de seguridad"
+    "safetyVerifyTitle": "Verificar número de seguridad",
+    "safetyComputing": "Calculando número de seguridad…",
+    "moreActions": "Más"
   },
   "group": {
     "newGroup": "Nuevo grupo",
