@@ -29,6 +29,10 @@ function armPlaintextSweep(): void {
  * Publishes PUBLIC keys only; nothing user-visible. Readies the directory for secret chats (later phases).
  */
 export function provisionE2EEInBackground(): void {
+    // Ask the browser to keep our storage PERSISTENT so it isn't evicted under pressure — eviction would
+    // wipe the device key + Signal identity + at-rest secret plaintext (unrecoverable; normal history
+    // re-syncs from the server, secret history does not). Best-effort; a no-op where unsupported/denied.
+    try { void navigator.storage?.persist?.(); } catch { /* ignore */ }
     armPlaintextSweep();   // disappearing-messages GC (48h)
     void (async () => {
         try {
