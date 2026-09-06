@@ -144,3 +144,22 @@ export async function mediaStats(): Promise<{files: number; fileBytes: number; c
         return {files: blobs.length, fileBytes, chats: histories.length, messages};
     } catch { return {files: 0, fileBytes: 0, chats: 0, messages: 0}; }
 }
+
+/** Purge a deleted chat's LOCAL caches: its attachment files (blobs) and its cached history rows. (The
+ * E2EE plaintext is cleared separately via deletePlaintextForChat.) Best-effort. */
+export async function deleteChatCache(chatId: string): Promise<void> {
+    try {
+        const db = await initDB();
+        const msgs = (await db.get(HISTORY_STORE_NAME, chatId)) as ChatMessage[] | undefined;
+        if (Array.isArray(msgs)) {
+            for (const m of msgs) {
+                const aid = m?.meta?.attachmentId;
+                if (aid) {
+                    await db.delete(ATTACHMENT_BLOB_STORE, aid).catch(() => {});
+                    await db.delete(ATTACHMENT_INDEX_STORE, aid).catch(() => {});
+                }
+            }
+        }
+        await db.delete(HISTORY_STORE_NAME, chatId);
+    } catch { /* best-effort */ }
+}

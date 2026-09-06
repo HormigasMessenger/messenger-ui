@@ -18,6 +18,8 @@ import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, answerViaPush, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
 import {parseCallDeepLink} from "@/features/call/model/callDeepLink.ts";
+import {readPendingCall, clearPendingCall} from "@/features/call/model/pendingCall.ts";
+import {CALL_TIMEOUT_MS} from "@/shared/config/webrtc";
 import {useWebRTC} from "@/features/call/hooks/useWebRTC.ts";
 
 
@@ -70,11 +72,29 @@ export default function Messenger() {
         // real INCOMING dialog. conversationId comes from the push (survives a cold start before getChats
         // loads). Falls back to a glare callback if no offer arrives (see callMiddleware answerViaPush).
         dispatch(answerViaPush({peerId: link.peerId, conversationId: link.conversationId, media: link.media}));
+        void clearPendingCall();   // the deep-link handled it — don't let the boot check re-fire
         const next = new URLSearchParams(searchParams);
         next.delete("call");
         next.delete("caller");
         setSearchParams(next, {replace: true});
     }, [searchParams, openChat, dispatch, setSearchParams]);
+
+    // Pick up a STILL-RINGING call when the app is opened DIRECTLY (not via the notification): the SW
+    // stored it from the call push; the original offer is gone, so re-run the answer flow. Once on mount.
+    useEffect(() => {
+        if (searchParams.get("call")) return;   // the deep-link effect owns that path
+        let alive = true;
+        void (async () => {
+            const pc = await readPendingCall();
+            if (!alive || !pc) return;
+            void clearPendingCall();
+            if (Date.now() - pc.at > CALL_TIMEOUT_MS) return;   // stale — the call has timed out
+            openChat(pc.conversationId);
+            dispatch(answerViaPush({peerId: pc.caller, conversationId: pc.conversationId, media: pc.media}));
+        })();
+        return () => { alive = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     /* ======================
        Delete modal

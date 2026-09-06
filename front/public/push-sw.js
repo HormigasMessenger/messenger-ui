@@ -192,6 +192,27 @@ async function appInForeground() {
 }
 
 // OFFLINE channel: server Web Push.
+// Persist the latest incoming-call info so the app can pick up a STILL-RINGING call when it's opened
+// DIRECTLY (not via the notification) — the original WebRTC offer is transient and gone by then, so the
+// app re-initiates the answer flow from this record. Cleared by the app once consumed / on call end.
+function putPendingCall(data) {
+    return new Promise((resolve) => {
+        let req;
+        try { req = indexedDB.open("hormiga-pending-call", 1); } catch { resolve(); return; }
+        req.onupgradeneeded = () => { try { const db = req.result; if (!db.objectStoreNames.contains("call")) db.createObjectStore("call"); } catch { /* ignore */ } };
+        req.onerror = () => resolve();
+        req.onsuccess = () => {
+            try {
+                const db = req.result;
+                const tx = db.transaction("call", "readwrite");
+                tx.objectStore("call").put({ conversationId: data.conversationId, caller: data.senderId, media: data.media, at: Date.now() }, "latest");
+                tx.oncomplete = () => { try { db.close(); } catch { /* ignore */ } resolve(); };
+                tx.onerror = () => resolve();
+            } catch { resolve(); }
+        };
+    });
+}
+
 self.addEventListener("push", (event) => {
     let payload = {};
     try { payload = event.data ? event.data.json() : {}; } catch (e) { payload = {}; }
@@ -201,6 +222,7 @@ self.addEventListener("push", (event) => {
         // ate the only ring on some incoming calls ("приходят через раз"). If the app is TRULY in the
         // foreground the in-app ringing (WS call:offer) already fires, so a redundant banner is harmless.
         const data = (payload && payload.data && typeof payload.data === "object") ? payload.data : {};
+        if (data.kind === "call") await putPendingCall(data);   // so a direct app-open can still pick it up
         if (data.kind !== "call") {
             // Messages: still suppress in the foreground — the user sees them in-app and a banner would
             // be redundant/annoying. We do NOT claim dedup here, so a later background redelivery still
