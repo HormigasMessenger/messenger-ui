@@ -23,6 +23,7 @@ is a **clean domain model** and **strict layering** so the real-time complexity 
 | **Send voice / photo / video / file** | two-phase **presigned MinIO** upload; client-side image compress + video caps + thumbnails |
 | **Call** (audio or video), and **answer a call whose app was closed** | WebRTC over `SIGNAL_IN/OUT`; Web Push wakes the callee, who re-joins via a `call:ready` re-offer |
 | Get **notifications** naming the sender | dual channel (in-app + Web Push) through one Service-Worker arbiter, sender name from a persistent cache |
+| **Turn on a secret chat** — end-to-end encrypted 1:1 | opt-in **Signal protocol** (X3DH + Double Ratchet); the server sees only ciphertext. Verify with a **safety number**; messages disappear after 48h |
 | **Block/unblock**, **delete** a message | mutual block gating; author-checked delete |
 | Work **offline / reopen instantly** | PWA app-shell precache + IndexedDB caches (history, media, names) |
 | Use it in **Spanish or English** | `react-i18next`, persisted toggle |
@@ -98,7 +99,7 @@ graph TD
 |---|---|---|
 | `app` | root shell, providers | `App`, error boundary |
 | `pages` | route composition | `Messenger` |
-| `features` | one user-facing capability each, self-contained | `chat`, `call`, `contacts`, `groups`, `presence`, `notifications`, `directory`, `auth` |
+| `features` | one user-facing capability each, self-contained | `chat`, `call`, `contacts`, `groups`, `presence`, `notifications`, `directory`, `auth`, `e2ee`, `diagnostics` |
 | `entities` | cross-feature domain types + mappers | `conversation`, `contact` |
 | `infrastructure` | generic transport, no domain knowledge | WebSocket middleware, `frameBridge` |
 | `shared` | pure utils, config, UI atoms, sound | `config/*`, `sound/notify`, `ulid` |
@@ -141,9 +142,16 @@ per-frame in feature middleware — never through a single "last message" slot.
 - **Offline / PWA** — `vite-plugin-pwa` precaches the app shell; a controller-change auto-reload untraps stale
   Service Workers after a deploy.
 - **i18n** — every visible string via `react-i18next` (ES/EN, persisted).
-- **Security (E2EE hardening, phase 0 shipped)** — strict enforcing CSP with a runtime-hashed inline script,
-  pinned dependencies (`npm ci`); closed-chat E2EE (static ECDH → HKDF → AES-GCM) is implemented and inert on a
-  branch, waiting on a backend key directory.
+- **Secret chats — full Signal-protocol E2EE (shipped).** Opt-in, 1:1. **X3DH** handshake from a backend key
+  directory (`hormiga-key-directory`) + **Double Ratchet** per-message keys with forward secrecy — the server
+  only ever sees an opaque envelope inside `payload.body`. Private keys are wrapped by a **non-extractable
+  device key** in IndexedDB; decrypted text is sealed at rest and **auto-wiped after 48h**. Out-of-band
+  **safety numbers** verify against a MITM. Because the transport is at-least-once and history-backed, a
+  message lost to a stalled ratchet is repaired by **orthogonal client-to-client recovery** (a fresh session,
+  AEAD-bound) rather than a key. Design + honest residuals in the
+  [encryption whitepaper](https://hormigasmessenger.github.io/messenger-design/encryption.html).
+- **Platform hardening** — strict enforcing CSP with a runtime-hashed inline script, pinned dependencies
+  (`npm ci`), and a best-effort persistent-storage request to reduce eviction of keys/history.
 
 ---
 
@@ -160,9 +168,9 @@ PostgreSQL · the **IDS** identity directory (KratosGate) — all behind the Ory
 
 | Metric | Value |
 |---|---|
-| Source files (TS/TSX, excl. tests) | **125** (~**9,550** LOC) |
-| Test files / tests | **53 / 319** (Vitest + Testing Library, jsdom, fake-indexeddb) |
-| FSD layer spread | features 93 · shared 15 · entities 5 · infrastructure 5 · store 2 · app/pages 2 |
+| Source files (TS/TSX, excl. tests) | **142** (~**11,270** LOC) |
+| Test files / tests | **64 / 362** (Vitest + Testing Library, jsdom, fake-indexeddb) |
+| FSD layer spread | features (incl. `e2ee`) · shared · entities · infrastructure · store · app/pages |
 | Shipped JS (gzip) | **~210 KB** total — React ~120 KB · app ~38 KB · Ory ~22 KB · messenger route ~19 KB · webp-WASM ~15 KB |
 | Route-level code splitting | yes (React.lazy per page) |
 
