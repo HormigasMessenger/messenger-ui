@@ -16,6 +16,7 @@ import { createWebsocketMiddleware } from "@/infrastructure/middleware/wsMiddlew
 import { presenceMiddleware } from "@/features/presence/middleware/presenceMiddleware.ts";
 import { chatMiddleware } from "@/features/chat/middleware/chatMiddleware.ts";
 import { authErrorListener } from "@/features/auth/middleware/authErrorMiddleware.ts";
+import { e2eeRecoveryMiddleware } from "@/features/e2ee";
 
 // DB functions
 import { loadOutboxFromDB, saveOutboxToDB } from "@/features/chat/db/db";
@@ -62,6 +63,7 @@ export function configureAppStore(webRTCService: WebRTCService) {
                 }),
                 presenceMiddleware,
                 chatMiddleware,
+                e2eeRecoveryMiddleware,
                 createCallMiddleware(webRTCService)
             ),
     });

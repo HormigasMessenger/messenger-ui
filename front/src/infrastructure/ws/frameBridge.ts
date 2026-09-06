@@ -11,6 +11,7 @@ import type { IncomingWSMessage, OutgoingWSMessage, WSMessage } from "@/infrastr
  */
 
 const CALL_PREFIX = "call:";
+const E2EE_PREFIX = "e2ee:";   // E2EE recovery control frames ride the same opaque SIGNAL channel as calls
 
 function uuid(): string {
     try { return crypto.randomUUID(); } catch { return "sig-" + Date.now() + "-" + Math.random().toString(36).slice(2); }
@@ -20,17 +21,18 @@ function uuid(): string {
 export function toWire(outgoing: OutgoingWSMessage, ctx?: { conversationId?: string }): WSMessage {
     const frame = outgoing as WSMessage & { to?: string };
 
-    if (typeof frame.type === "string" && frame.type.startsWith(CALL_PREFIX)) {
+    if (typeof frame.type === "string" && (frame.type.startsWith(CALL_PREFIX) || frame.type.startsWith(E2EE_PREFIX))) {
         // Backend SIGNAL_IN validation REQUIRES: messageId, recipientId, conversationId,
         // senderTimestamp, senderTimezone, and payload.kind ∈ {text,attachment,event,custom}.
-        // So the WebRTC sub-type (call:offer/answer/ice/end) + its data go inside payload.body
-        // under kind="event". `to` is the counterpart USER id; conversationId comes from wsMiddleware.
-        const { type, to, ...rest } = frame;
+        // So the sub-type (call:offer/answer/ice/end, or e2ee:recover-req/resp) + its data go inside
+        // payload.body under kind="event". `to` is the counterpart USER id. conversationId comes from the
+        // frame itself (E2EE recovery carries the chatId) or, for calls, from wsMiddleware (ctx).
+        const { type, to, conversationId, ...rest } = frame as WSMessage & { to?: string; conversationId?: string };
         return {
             type: "SIGNAL_IN",
             messageId: uuid(),
             recipientId: to,
-            conversationId: ctx?.conversationId,
+            conversationId: conversationId ?? ctx?.conversationId,
             senderTimestamp: Date.now(),
             senderTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             payload: { kind: "event", body: JSON.stringify({ type, ...rest }) },

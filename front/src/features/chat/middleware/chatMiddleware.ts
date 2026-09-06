@@ -14,6 +14,7 @@ import {playNotificationSound} from "@/shared/sound/notify.ts";
 import {showDesktopNotification} from "@/features/notifications";
 import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
 import {savePlaintext, loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "@/features/e2ee/lib/atRest.ts";
+import {reportUndecryptable} from "@/features/e2ee";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -43,18 +44,27 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
         if (secret.length) {
             const d = store.dispatch as AppDispatch;
             void (async () => {
+                const toRecover: Array<{clientId: string; serverId: string}> = [];
+                let peerId = "";
                 for (const m of secret) {
                     let plain = (await loadPlaintext(m.id, E2EE_PLAINTEXT_TTL_MS)) ?? (m.clientId ? await loadPlaintext(m.clientId, E2EE_PLAINTEXT_TTL_MS) : null);
+                    let recoverable = false;
                     if (plain == null && m.from && m.from !== myId) {
                         // Never decrypted live → try the ratchet now (in-order over history).
                         try { plain = await decryptReceived(m.from, m.text); void savePlaintext(m.id, chatId, plain); }
-                        catch { /* permanent gap / lost ciphertext → recovery (Step B) or lost */ }
+                        catch {
+                            // Permanent gap / lost ciphertext → hand off to client-to-client recovery (Step B),
+                            // correlated by the sender's client id. Show "⏳ re-requested" until it resolves/expires.
+                            if (m.clientId) { toRecover.push({clientId: m.clientId, serverId: m.id}); peerId = m.from; recoverable = true; }
+                        }
                     }
+                    const fallback = recoverable ? i18n.t("chat.decryptPending") : i18n.t("chat.decryptLost");
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
-                        if (row) { row.text = plain ?? i18n.t("chat.decryptLost"); row.secret = true; }
+                        if (row) { row.text = plain ?? fallback; row.secret = true; }
                     }));
                 }
+                if (toRecover.length && peerId) d(reportUndecryptable({chatId, peerId, items: toRecover}) as never);
             })();
         }
         return result;
