@@ -69,6 +69,17 @@ export async function deletePlaintextForChat(chatId: string): Promise<void> {
     } catch { /* best-effort */ }
 }
 
+/** Count + on-disk bytes of stored secret plaintext (device-key-wrapped), for the info page. */
+export async function plaintextStats(): Promise<{count: number; bytes: number}> {
+    try {
+        const d = await db();
+        const vals = (await d.getAll(STORE)) as Array<Rec | Wrapped>;
+        let bytes = 0;
+        for (const v of vals) { const w = "w" in v ? v.w : v; bytes += (w?.ct?.byteLength ?? 0) + (w?.iv?.byteLength ?? 0); }
+        return {count: vals.length, bytes};
+    } catch { return {count: 0, bytes: 0}; }
+}
+
 /** Sweep all plaintext older than ttlMs across every chat (disappearing-message GC). Returns count removed. */
 export async function sweepExpired(ttlMs: number): Promise<number> {
     let n = 0;

@@ -25,9 +25,15 @@ export function getDeviceKey(): Promise<CryptoKey> {
         if (existing) return existing;
         const key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false /* non-extractable */, ["encrypt", "decrypt"]);
         await d.put(STORE, key, KEY);
+        await d.put(STORE, Date.now(), "createdAt");   // for the info page
         return key;
     })();
     return keyp;
+}
+
+/** When the device key was first generated (epoch ms), or 0 if not yet created. */
+export async function getDeviceKeyCreatedAt(): Promise<number> {
+    try { return ((await (await db()).get(STORE, "createdAt")) as number | undefined) ?? 0; } catch { return 0; }
 }
 
 export interface Wrapped { iv: ArrayBuffer; ct: ArrayBuffer }

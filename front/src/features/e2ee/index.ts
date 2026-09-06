@@ -7,6 +7,7 @@ export {encryptForSend, decryptReceived, isSecretEnvelope} from "./lib/secretCha
 export {e2eeRecoveryMiddleware, reportUndecryptable} from "./recovery/e2eeRecoveryMiddleware.ts";
 export {savePlaintext, loadPlaintext, deletePlaintextForChat, sweepExpired, E2EE_PLAINTEXT_TTL_MS} from "./lib/atRest.ts";
 export {computeSafetyNumber, formatSafetyNumber, markVerified, clearVerified, isVerified} from "./lib/safetyNumber.ts";
+export {cryptoStats, type CryptoStats} from "./lib/cryptoStats.ts";
 
 import {ensureProvisioned, maybeReplenish} from "./lib/provisioning.ts";
 import {selfCount} from "./lib/keyDirectory.ts";

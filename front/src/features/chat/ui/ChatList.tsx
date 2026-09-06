@@ -1,4 +1,4 @@
-import {memo, useEffect, useRef} from "react";
+import {memo, useEffect, useRef, useState} from "react";
 import {useSelector} from "react-redux";
 import {useNavigate} from "react-router-dom";
 import {useTranslation} from "react-i18next";
@@ -6,6 +6,7 @@ import {useTranslation} from "react-i18next";
 import type {RootState} from "@/store/store";
 import type {Contact} from "@/entities/contact";
 import i18n, {setLanguage} from "@/shared/i18n";
+import {InfoModal} from "@/features/diagnostics/InfoModal.tsx";
 
 // First+last initial for the list avatar (falls back to "?").
 const initials = (name: string) => {
@@ -34,6 +35,7 @@ function ChatList({
                   }: ChatListProps) {
     const {t} = useTranslation();
     const lang = i18n.language?.startsWith("en") ? "en" : "es";
+    const [infoOpen, setInfoOpen] = useState(false);
     const selectedChatId = useSelector(
         (state: RootState) => state.chatUi.selectedChatId
     );
@@ -79,6 +81,15 @@ function ChatList({
                                     {t("language.en")}
                                 </button>
                             </div>
+
+                            <button
+                                onClick={() => setInfoOpen(true)}
+                                className="text-base opacity-80 hover:opacity-100"
+                                title={t("info.openInfo")}
+                                aria-label={t("info.openInfo")}
+                            >
+                                ℹ️
+                            </button>
 
                             <button
                                 onClick={onLogout}
@@ -171,6 +182,7 @@ function ChatList({
                     })}
                 </div>
             </aside>
+            {infoOpen && <InfoModal onClose={() => setInfoOpen(false)}/>}
         </>
     );
 }

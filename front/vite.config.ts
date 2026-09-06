@@ -4,9 +4,15 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { visualizer } from "rollup-plugin-visualizer";
 import { VitePWA } from "vite-plugin-pwa";
+import pkg from "./package.json" with { type: "json" };
 
 
 export default defineConfig({
+  // Build-time constants surfaced in the app (the diagnostics/info page shows them).
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
   plugins: [
       react(),
       tailwindcss(),

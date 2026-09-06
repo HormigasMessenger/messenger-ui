@@ -160,5 +160,32 @@
     "accept": "Aceptar",
     "reject": "Rechazar",
     "hangUp": "Finalizar llamada"
+  },
+  "info": {
+    "title": "Info y diagnóstico",
+    "general": "General",
+    "version": "Versión",
+    "build": "Compilación",
+    "loginAt": "Sesión iniciada",
+    "userId": "ID de usuario",
+    "locale": "Idioma",
+    "storage": "Almacenamiento",
+    "used": "Usado",
+    "persisted": "Almacenamiento persistente",
+    "files": "Archivos",
+    "messages": "Mensajes",
+    "chats": "chats",
+    "encryption": "Cifrado",
+    "masterKey": "Clave del dispositivo creada",
+    "secretMsgs": "Mensajes secretos",
+    "pending": "Esperando recuperación",
+    "verified": "Contactos verificados",
+    "protocol": "Protocolo",
+    "library": "Biblioteca",
+    "connection": "Conexión",
+    "wsStatus": "WebSocket",
+    "reconnects": "Reconexiones (10 min)",
+    "close": "Cerrar",
+    "openInfo": "Info de la app"
   }
 }

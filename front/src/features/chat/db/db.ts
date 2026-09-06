@@ -131,3 +131,16 @@ export async function clearAllLocalData() {
         db.clear(ATTACHMENT_BLOB_STORE), db.clear(ATTACHMENT_INDEX_STORE),
     ]);
 }
+
+/** Storage breakdown for the info page: attachment files (count + bytes) and cached history (chats + msgs). */
+export async function mediaStats(): Promise<{files: number; fileBytes: number; chats: number; messages: number}> {
+    try {
+        const db = await initDB();
+        const blobs = (await db.getAll(ATTACHMENT_BLOB_STORE)) as unknown[];
+        let fileBytes = 0;
+        for (const b of blobs) fileBytes += b instanceof Blob ? b.size : ((b as {byteLength?: number})?.byteLength ?? 0);
+        const histories = (await db.getAll(HISTORY_STORE_NAME)) as unknown[][];
+        const messages = histories.reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0);
+        return {files: blobs.length, fileBytes, chats: histories.length, messages};
+    } catch { return {files: 0, fileBytes: 0, chats: 0, messages: 0}; }
+}

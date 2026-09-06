@@ -160,5 +160,32 @@
     "accept": "Accept",
     "reject": "Reject",
     "hangUp": "End call"
+  },
+  "info": {
+    "title": "App info & diagnostics",
+    "general": "General",
+    "version": "Version",
+    "build": "Build",
+    "loginAt": "Signed in",
+    "userId": "User id",
+    "locale": "Language",
+    "storage": "Storage",
+    "used": "Used",
+    "persisted": "Persistent storage",
+    "files": "Files",
+    "messages": "Messages",
+    "chats": "chats",
+    "encryption": "Encryption",
+    "masterKey": "Device key created",
+    "secretMsgs": "Secret messages",
+    "pending": "Awaiting recovery",
+    "verified": "Verified contacts",
+    "protocol": "Protocol",
+    "library": "Library",
+    "connection": "Connection",
+    "wsStatus": "WebSocket",
+    "reconnects": "Reconnects (10 min)",
+    "close": "Close",
+    "openInfo": "App info"
   }
 }

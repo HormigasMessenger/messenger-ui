@@ -10,6 +10,7 @@ import {
 } from "@/infrastructure/slices/websocketSlice.ts";
 
 import {DELAY_STEP_MS, MAX_RECONNECT_DELAY} from "@/shared/config/ws";
+import {recordConnect} from "@/shared/diag/diag.ts";
 import type {OutgoingWSMessage, WSMessage} from "../types.ts";
 import {fromWire, toWire} from "@/infrastructure/ws/frameBridge.ts";
 import {isNotLogged} from "@/shared/utils/checks";
@@ -113,6 +114,7 @@ export const createWebsocketMiddleware = (deps: WebsocketDeps): Middleware =>
             thisSocket.onopen = () => {
                 reconnectAttempts = 0;
                 openedAt = Date.now();
+                recordConnect();   // diagnostics: rolling (re)connect count
                 // If this connection stays up past the rapid window, it's healthy → clear the breaker.
                 if (stableTimer) clearTimeout(stableTimer);
                 stableTimer = setTimeout(() => { rapidCycles = 0; }, RAPID_CLOSE_MS);
