@@ -24,6 +24,7 @@ export function ChatHeader({
     onDeleteChat,
     secret,
     onToggleSecret,
+    onOpenSafety,
 }: {
     chat: Contact | null;
     isGroup?: boolean;
@@ -41,6 +42,7 @@ export function ChatHeader({
     onDeleteChat: () => void;
     secret?: boolean;
     onToggleSecret?: () => void;
+    onOpenSafety?: () => void;
 }) {
     const {t} = useTranslation();
     return (
@@ -96,6 +98,17 @@ export function ChatHeader({
                         className="hover:opacity-80 p-1"
                     >
                         <PhoneIcon/>
+                    </button>
+                )}
+
+                {!isGroup && secret && onOpenSafety && (
+                    <button
+                        onClick={onOpenSafety}
+                        title={t("chat.safetyVerifyTitle")}
+                        aria-label={t("chat.safetyVerifyTitle")}
+                        className="p-1 text-lg opacity-70 hover:opacity-100"
+                    >
+                        🛡️
                     </button>
                 )}
 

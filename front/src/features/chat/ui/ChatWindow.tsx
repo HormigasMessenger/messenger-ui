@@ -5,6 +5,7 @@ import type {AppDispatch, RootState} from "@/store/store";
 import type {Contact} from "@/entities/contact";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
 import {setSecret} from "@/features/chat/model/slices/secretChatsSlice.ts";
+import {SafetyNumberModal} from "@/features/e2ee/ui/SafetyNumberModal.tsx";
 import {useGetPresenceStatusQuery} from "@/features/chat/rest/chatApi.ts";
 import {fmtLastSeen} from "@/features/chat/model/lastSeen.ts";
 import {useWindowedHistory} from "@/features/chat/hooks/useWindowedHistory.ts";
@@ -95,6 +96,8 @@ function ChatWindow({
     const secret = useSelector((state: RootState) =>
         !!(selectedChatId && state.secretChats.byId[selectedChatId])
     );
+    const myId = useSelector((state: RootState) => state.user.id);
+    const [safetyOpen, setSafetyOpen] = useState(false);
     const peerTyping = useSelector((state: RootState) =>
         selectedChatId ? !!state.chatUi.typingByChat[selectedChatId] : false
     );
@@ -258,7 +261,17 @@ function ChatWindow({
                 onToggleSecret={!isGroup && selectedChatId
                     ? () => dispatch(setSecret({conversationId: selectedChatId, secret: !secret}))
                     : undefined}
+                onOpenSafety={counterpartId ? () => setSafetyOpen(true) : undefined}
             />
+
+            {safetyOpen && counterpartId && myId && (
+                <SafetyNumberModal
+                    myUserId={myId}
+                    peerUserId={counterpartId}
+                    peerName={chat?.name ?? counterpartId}
+                    onClose={() => setSafetyOpen(false)}
+                />
+            )}
 
             <MessageList
                 listRef={listRef}

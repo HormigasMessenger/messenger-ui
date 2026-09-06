@@ -67,6 +67,13 @@ export class SignalStore implements StorageType {
     async loadIdentityKey(addr: string): Promise<ArrayBuffer | undefined> {
         return (await (await this.db()).get(PEERS, addr)) as ArrayBuffer | undefined;
     }
+    /** A peer's stored identity public key, by userId (PEERS are keyed "userId.deviceNum"). v1: first device. */
+    async getPeerIdentity(userId: string): Promise<ArrayBuffer | undefined> {
+        const d = await this.db();
+        const keys = (await d.getAllKeys(PEERS)) as string[];
+        const k = keys.find((key) => key.startsWith(userId + "."));
+        return k ? ((await d.get(PEERS, k)) as ArrayBuffer | undefined) : undefined;
+    }
 
     // --- one-time prekeys ---
     async loadPreKey(id: string | number): Promise<KeyPairType | undefined> {
