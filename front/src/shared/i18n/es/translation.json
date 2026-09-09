@@ -190,6 +190,17 @@
     "close": "Cerrar",
     "openInfo": "Info de la app",
     "other": "Otros / cachés",
-    "reconnects20": "Reconexiones — últimos 20 min"
+    "reconnects20": "Reconexiones — últimos 20 min",
+    "install": "Instalar app",
+    "installed": "Instalada en este dispositivo",
+    "installBtn": "Instalar en este dispositivo",
+    "installHintIos": "iPhone/iPad (Safari): Compartir → Añadir a inicio",
+    "installHintOther": "Android / Escritorio: menú del navegador → Instalar app",
+    "dangerZone": "Zona de riesgo",
+    "wipe": "Borrar todo en este dispositivo",
+    "wipeDesc": "Elimina TODOS los datos locales — la clave del dispositivo, mensajes secretos, chats y archivos en caché — y recarga. Se crea una clave nueva al iniciar sesión de nuevo, y el historial cifrado anterior se pierde para siempre. No se puede deshacer.",
+    "wipeConfirm": "Sí, borrar todo",
+    "wiping": "Borrando…",
+    "cancel": "Cancelar"
   }
 }

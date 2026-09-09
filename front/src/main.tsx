@@ -8,6 +8,7 @@ import { saveOutboxToDB } from "@/features/chat/db/db";
 
 import "@/index.css";
 import "@/shared/i18n";
+import "@/shared/pwa/installPrompt.ts";   // arm the "Install app" prompt capture early (event fires once at load)
 import App from "./app/App.tsx";
 
 const store = configureAppStore(webRTCService);

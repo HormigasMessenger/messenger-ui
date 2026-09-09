@@ -5,6 +5,8 @@ import type {RootState} from "@/store/store";
 import {appVersion, buildTime, getLoginAt, connectsInLast, connectBuckets} from "@/shared/diag/diag.ts";
 import {mediaStats} from "@/features/chat/db/db.ts";
 import {cryptoStats, type CryptoStats} from "@/features/e2ee";
+import {wipeAllStorage} from "./wipeStorage.ts";
+import {canInstall, isStandalone, promptInstall} from "@/shared/pwa/installPrompt.ts";
 
 // Diagnostics / info page (modal): app identity, storage usage, encryption state, connection health.
 // All numbers are read on open; nothing here changes state.
@@ -81,6 +83,19 @@ export function InfoModal({onClose}: {onClose: () => void}) {
     const [store, setStore] = useState<{usage: number; quota: number; persisted: boolean} | null>(null);
     const [media, setMedia] = useState<{files: number; fileBytes: number; chats: number; messages: number} | null>(null);
     const [crypto, setCrypto] = useState<CryptoStats | null>(null);
+    const [confirmWipe, setConfirmWipe] = useState(false);
+    const [wiping, setWiping] = useState(false);
+    // Install affordance, read once on open (the beforeinstallprompt event is captured at boot).
+    const [installed] = useState(isStandalone);
+    const [installable, setInstallable] = useState(canInstall);
+
+    const doInstall = async () => { await promptInstall(); setInstallable(canInstall()); };
+    const doWipe = async () => {
+        setWiping(true);
+        await wipeAllStorage();
+        // Hard reload: a fresh boot with no device key → provisioning creates a new one on next sign-in.
+        window.location.reload();
+    };
 
     useEffect(() => {
         let alive = true;
@@ -140,6 +155,45 @@ export function InfoModal({onClose}: {onClose: () => void}) {
                         <div className="text-[11px] text-teal-600 mb-1">{t("info.reconnects20")}</div>
                         <Sparkline data={connectBuckets(20 * 60 * 1000, 20)}/>
                     </div>
+                </Section>
+
+                <Section title={t("info.install")}>
+                    {installed ? (
+                        <div className="py-1.5 text-sm text-teal-700">✓ {t("info.installed")}</div>
+                    ) : installable ? (
+                        <button onClick={doInstall}
+                                className="w-full my-1 py-2 rounded-lg bg-teal-700 text-white text-sm font-medium hover:bg-teal-800">
+                            {t("info.installBtn")}
+                        </button>
+                    ) : (
+                        <div className="py-1.5 text-[13px] text-teal-700 leading-relaxed">
+                            <div>{t("info.installHintIos")}</div>
+                            <div>{t("info.installHintOther")}</div>
+                        </div>
+                    )}
+                </Section>
+
+                <Section title={t("info.dangerZone")}>
+                    {!confirmWipe ? (
+                        <button onClick={() => setConfirmWipe(true)}
+                                className="w-full my-1 py-2 rounded-lg border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50">
+                            {t("info.wipe")}
+                        </button>
+                    ) : (
+                        <div className="my-1">
+                            <p className="text-[13px] text-red-700 leading-relaxed mb-2">{t("info.wipeDesc")}</p>
+                            <div className="flex gap-2">
+                                <button onClick={doWipe} disabled={wiping}
+                                        className="flex-1 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60">
+                                    {wiping ? t("info.wiping") : t("info.wipeConfirm")}
+                                </button>
+                                <button onClick={() => setConfirmWipe(false)} disabled={wiping}
+                                        className="flex-1 py-2 rounded-lg bg-teal-100 text-teal-800 text-sm font-medium hover:bg-teal-200 disabled:opacity-60">
+                                    {t("info.cancel")}
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </Section>
 
                 <button onClick={onClose} className="w-full mt-1 py-2 text-teal-700 text-sm hover:underline">{t("info.close")}</button>
