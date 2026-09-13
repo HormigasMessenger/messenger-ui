@@ -94,6 +94,8 @@ let ringEl: HTMLAudioElement | null = null;
 let ringElTried = false;
 let ringPrimed = false;
 let ringViaEl = false;
+let ringActive = false;                 // are we supposed to be ringing right now?
+let ringGen = 0;                        // bumped on every start/stop, to invalidate a late play() rejection
 let ringTimer: ReturnType<typeof setInterval> | null = null;
 
 function ringtoneEl(): HTMLAudioElement | null {
@@ -125,7 +127,9 @@ function primeRingtone() {
 
 /** Start the looping ringtone (incoming call / outgoing ringback). No-op if already ringing. */
 export function startRinging() {
-    if (ringViaEl || ringTimer) return;             // already ringing
+    if (ringActive) return;                         // already ringing
+    ringActive = true;
+    const gen = ++ringGen;
     const el = ringtoneEl();
     if (el) {
         try {
@@ -133,7 +137,13 @@ export function startRinging() {
             el.currentTime = 0;
             ringViaEl = true;
             const p = el.play();
-            if (p && typeof p.catch === "function") p.catch(() => { ringViaEl = false; startWebAudioRing(); });
+            // A late play() rejection must NOT resurrect the ring after a stop (or a restart): only fall
+            // back to WebAudio if this same start is still the active one.
+            if (p && typeof p.catch === "function") p.catch(() => {
+                if (gen !== ringGen || !ringActive) return;
+                ringViaEl = false;
+                startWebAudioRing();
+            });
             return;
         } catch { ringViaEl = false; /* fall through to WebAudio */ }
     }
@@ -142,6 +152,8 @@ export function startRinging() {
 
 /** Stop the ringtone (both paths). */
 export function stopRinging() {
+    ringActive = false;
+    ringGen++;                                      // invalidate any in-flight play() rejection
     if (ringEl && ringViaEl) { try { ringEl.pause(); ringEl.currentTime = 0; } catch { /* ignore */ } }
     ringViaEl = false;
     if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }

@@ -68,6 +68,17 @@ describe("notify — ringtone", () => {
         expect(fakeRingEl.pause).toHaveBeenCalledTimes(1);
     });
 
+    it("a stop before a rejected play() settles does NOT resurrect the ring (race)", async () => {
+        fakeRingEl.play.mockRejectedValueOnce(new Error("NotAllowedError"));
+        const setSpy = vi.spyOn(globalThis, "setInterval");
+
+        startRinging();      // element play() will reject...
+        stopRinging();       // ...but we stop before it settles
+        await flush();       // the late rejection must be ignored (superseded)
+
+        expect(setSpy).not.toHaveBeenCalled();   // no WebAudio ring left running
+    });
+
     it("falls back to the WebAudio interval loop when the element's play() is blocked", async () => {
         fakeRingEl.play.mockRejectedValueOnce(new Error("NotAllowedError"));
         const setSpy = vi.spyOn(globalThis, "setInterval");
