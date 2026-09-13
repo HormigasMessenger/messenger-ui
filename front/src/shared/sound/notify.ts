@@ -50,42 +50,110 @@ export function playNotificationSound() {
     } catch { /* ignore */ }
 }
 
+// A context can be paused as "suspended" (autoplay policy / backgrounded) or, on iOS, "interrupted" (another
+// app took audio focus — e.g. after a previous call). Both need resume(); the standard TS type omits
+// "interrupted", so compare as a string.
+function needsResume(ac: AudioContext): boolean {
+    const s = ac.state as string;
+    return s === "suspended" || s === "interrupted";
+}
+
 /**
- * Resume the AudioContext from a user gesture. Browsers start it "suspended" and reject resume() unless
- * it's called during a gesture, so notification/ring audio is silent until the user has interacted once.
- * Wire this to a one-time pointerdown/keydown at app start (see App). Idempotent + best-effort.
+ * Unlock audio from a user gesture: resume the AudioContext AND "prime" the HTML ringtone element (play it
+ * muted once, then pause) so a later loop-play is allowed by autoplay policy. Browsers keep both locked until
+ * a gesture. Wired to pointerdown/keydown at app start (see App). Idempotent + best-effort.
  */
 export function unlockAudio() {
     const ac = audioCtx();
-    if (ac && ac.state === "suspended") ac.resume().catch(() => {});
+    if (ac && needsResume(ac)) ac.resume().catch(() => {});
+    primeRingtone();
 }
 
-// Resume a suspended context and WAIT for it — scheduling oscillators while the context is still
-// suspended pins them to a frozen currentTime, so when it finally resumes their start time is already in
-// the past and the browser drops/clips them. That's the "first ring is silent / sometimes no sound" bug.
+// Resume a suspended/interrupted context and WAIT for it — scheduling oscillators while it's still paused
+// pins them to a frozen currentTime, so on resume their start time is already in the past and the browser
+// drops/clips them (the WebAudio fallback's "first ring silent" bug).
 async function ensureRunning(ac: AudioContext): Promise<void> {
-    if (ac.state === "suspended") { try { await ac.resume(); } catch { /* blocked outside a gesture */ } }
+    if (needsResume(ac)) { try { await ac.resume(); } catch { /* blocked outside a gesture */ } }
 }
 
-// Mobile browsers SUSPEND the AudioContext when the page goes to the background and don't auto-resume on
-// return, so a call arriving as you switch back would be silent. Re-warm it whenever the app regains the
-// foreground (best-effort; a plain resume on return-to-foreground is honored in practice).
+// Mobile browsers pause the AudioContext when the page goes to the background and don't auto-resume on
+// return. Re-warm it whenever the app regains the foreground (best-effort).
 if (typeof document !== "undefined") {
-    const rewarm = () => { if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {}); };
+    const rewarm = () => { if (ctx && needsResume(ctx)) ctx.resume().catch(() => {}); };
     document.addEventListener("visibilitychange", () => { if (!document.hidden) rewarm(); });
     if (typeof window !== "undefined") window.addEventListener("focus", rewarm);
 }
 
-// --- incoming/outgoing call ringtone (asset-free, looped) --------------------------------------------
+// --- incoming/outgoing call ringtone -----------------------------------------------------------------
+// Primary: a preloaded, natively-looping <audio> element. Far more reliable than scheduled WebAudio on
+// mobile — it survives audio-session routing changes and doesn't depend on the context clock — but needs a
+// one-time gesture "prime" (muted play→pause) before a later loop-play is allowed. If it's unavailable (no
+// HTMLAudio / blocked play), we fall back to the asset-free WebAudio burst loop. The clip itself is a WAV
+// blob generated at runtime, so this stays asset-free.
+let ringEl: HTMLAudioElement | null = null;
+let ringElTried = false;
+let ringPrimed = false;
+let ringViaEl = false;
 let ringTimer: ReturnType<typeof setInterval> | null = null;
 
+function ringtoneEl(): HTMLAudioElement | null {
+    if (ringElTried) return ringEl;
+    ringElTried = true;
+    try {
+        if (typeof Audio === "undefined") return null;
+        const url = buildRingtoneUrl();
+        if (!url) return null;
+        ringEl = new Audio(url);
+        ringEl.loop = true;
+        ringEl.preload = "auto";
+    } catch { ringEl = null; }
+    return ringEl;
+}
+
+function primeRingtone() {
+    if (ringPrimed) return;
+    const el = ringtoneEl();
+    if (!el) return;
+    try {
+        el.muted = true;
+        const p = el.play();
+        const settle = () => { try { el.pause(); el.currentTime = 0; el.muted = false; ringPrimed = true; } catch { /* ignore */ } };
+        if (p && typeof p.then === "function") p.then(settle).catch(() => { try { el.muted = false; } catch { /* ignore */ } });
+        else settle();
+    } catch { try { el.muted = false; } catch { /* ignore */ } }
+}
+
+/** Start the looping ringtone (incoming call / outgoing ringback). No-op if already ringing. */
+export function startRinging() {
+    if (ringViaEl || ringTimer) return;             // already ringing
+    const el = ringtoneEl();
+    if (el) {
+        try {
+            el.muted = false;
+            el.currentTime = 0;
+            ringViaEl = true;
+            const p = el.play();
+            if (p && typeof p.catch === "function") p.catch(() => { ringViaEl = false; startWebAudioRing(); });
+            return;
+        } catch { ringViaEl = false; /* fall through to WebAudio */ }
+    }
+    startWebAudioRing();
+}
+
+/** Stop the ringtone (both paths). */
+export function stopRinging() {
+    if (ringEl && ringViaEl) { try { ringEl.pause(); ringEl.currentTime = 0; } catch { /* ignore */ } }
+    ringViaEl = false;
+    if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+}
+
+// --- WebAudio fallback loop --------------------------------------------------------------------------
 async function ringBurst() {
     const ac = audioCtx();
     if (!ac) return;
     await ensureRunning(ac);             // resume FIRST, then schedule against a live clock
     const base = ac.currentTime;
-    // Two short beeps (classic "ring-ring").
-    for (const offset of [0, 0.45]) {
+    for (const offset of [0, 0.45]) {    // two beeps: classic "ring-ring"
         const t = base + offset;
         const osc = ac.createOscillator();
         const gain = ac.createGain();
@@ -101,14 +169,37 @@ async function ringBurst() {
     }
 }
 
-/** Start the looping ringtone (incoming call / outgoing ringback). No-op if already ringing. */
-export function startRinging() {
+function startWebAudioRing() {
     if (ringTimer) return;
     void ringBurst();
     ringTimer = setInterval(() => { void ringBurst(); }, 2600);
 }
 
-/** Stop the ringtone. */
-export function stopRinging() {
-    if (ringTimer) { clearInterval(ringTimer); ringTimer = null; }
+// Asset-free ringtone clip: a 2.6s "ring-ring" loop (two 480 Hz beeps, then silence) as a 16-bit PCM WAV
+// blob. Returns an object URL, or null where Blob/URL aren't available.
+function buildRingtoneUrl(): string | null {
+    try {
+        if (typeof Blob === "undefined" || typeof URL === "undefined" || !URL.createObjectURL) return null;
+        const sr = 16000, n = Math.floor(sr * 2.6);
+        const buf = new ArrayBuffer(44 + n * 2);
+        const dv = new DataView(buf);
+        const put = (o: number, s: string) => { for (let i = 0; i < s.length; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+        put(0, "RIFF"); dv.setUint32(4, 36 + n * 2, true); put(8, "WAVE");
+        put(12, "fmt "); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+        dv.setUint32(24, sr, true); dv.setUint32(28, sr * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+        put(36, "data"); dv.setUint32(40, n * 2, true);
+        const beeps: Array<[number, number]> = [[0, 0.33], [0.45, 0.78]];   // then silence to 2.6s → ring cadence
+        for (let i = 0; i < n; i++) {
+            const t = i / sr;
+            let amp = 0;
+            for (const [s, e] of beeps) {
+                if (t >= s && t < e) {
+                    const local = t - s, env = Math.min(1, local / 0.02) * Math.min(1, (e - t) / 0.03);
+                    amp = 0.5 * env * Math.sin(2 * Math.PI * 480 * t);
+                }
+            }
+            dv.setInt16(44 + i * 2, Math.max(-1, Math.min(1, amp)) * 32767, true);
+        }
+        return URL.createObjectURL(new Blob([buf], {type: "audio/wav"}));
+    } catch { return null; }
 }

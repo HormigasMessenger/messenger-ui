@@ -2,7 +2,7 @@ import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import {startRinging, stopRinging, unlockAudio} from "../notify";
 
 // A minimal fake AudioContext (jsdom has none). Kept as one stable object because notify.ts caches the
-// context module-level after the first use; tests mutate `.state` to drive unlockAudio.
+// context module-level after the first use; tests mutate `.state` to drive unlockAudio / the WebAudio fallback.
 const chain = {connect: () => chain};
 const fakeCtx = {
     state: "running" as string,
@@ -13,12 +13,23 @@ const fakeCtx = {
     destination: {},
 };
 
+// A stable fake ringtone <audio> element (notify.ts caches the first one it builds).
+const fakeRingEl = {
+    loop: false, preload: "", muted: false, currentTime: 0,
+    play: vi.fn(() => Promise.resolve()),
+    pause: vi.fn(),
+};
+
 beforeEach(() => {
-    // A PLAIN function (not vi.fn): `new fn()` returns fn's returned object, so the module caches our
-    // shared fakeCtx. A vi.fn constructor would return a fresh empty `this` instead.
     vi.stubGlobal("AudioContext", function () { return fakeCtx; });
+    // new Audio(url) → our stable fake; a plain function so `new` returns the returned object.
+    vi.stubGlobal("Audio", function () { return fakeRingEl; });
+    vi.stubGlobal("URL", {createObjectURL: () => "blob:ring", revokeObjectURL: () => {}});
     fakeCtx.state = "running";
     fakeCtx.resume.mockClear();
+    fakeRingEl.play.mockReset().mockResolvedValue(undefined);
+    fakeRingEl.pause.mockClear();
+    fakeRingEl.muted = false; fakeRingEl.currentTime = 0;
     stopRinging(); // reset module ring state between tests
 });
 afterEach(() => {
@@ -26,40 +37,47 @@ afterEach(() => {
     vi.useRealTimers();
 });
 
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 describe("notify — unlockAudio", () => {
     it("resumes a suspended AudioContext", () => {
         fakeCtx.state = "suspended";
         unlockAudio();
         expect(fakeCtx.resume).toHaveBeenCalledTimes(1);
     });
-    it("is a no-op when the context is already running", () => {
+    it("resumes an iOS 'interrupted' AudioContext", () => {
+        fakeCtx.state = "interrupted";
+        unlockAudio();
+        expect(fakeCtx.resume).toHaveBeenCalledTimes(1);
+    });
+    it("is a no-op (no resume) when the context is already running", () => {
         fakeCtx.state = "running";
         unlockAudio();
         expect(fakeCtx.resume).not.toHaveBeenCalled();
     });
 });
 
-describe("notify — ringtone loop", () => {
-    it("resumes a suspended context before ringing (so the first beep isn't dropped)", async () => {
-        fakeCtx.state = "suspended";
+describe("notify — ringtone", () => {
+    it("startRinging plays the looping <audio> element; a second call is a no-op; stopRinging pauses it", () => {
         startRinging();
-        await Promise.resolve();               // flush the awaited resume
-        expect(fakeCtx.resume).toHaveBeenCalled();
+        startRinging(); // already ringing → must not start a second time
+        expect(fakeRingEl.play).toHaveBeenCalledTimes(1);
+        expect(fakeRingEl.loop).toBe(true);
+
         stopRinging();
+        expect(fakeRingEl.pause).toHaveBeenCalledTimes(1);
     });
 
-    it("startRinging arms exactly one interval; a second call is a no-op; stopRinging clears it", () => {
-        vi.useFakeTimers();
+    it("falls back to the WebAudio interval loop when the element's play() is blocked", async () => {
+        fakeRingEl.play.mockRejectedValueOnce(new Error("NotAllowedError"));
         const setSpy = vi.spyOn(globalThis, "setInterval");
         const clearSpy = vi.spyOn(globalThis, "clearInterval");
 
         startRinging();
-        startRinging(); // already ringing → must not arm a second interval
+        await flush();                       // let the rejected play() settle → fallback arms the interval
         expect(setSpy).toHaveBeenCalledTimes(1);
 
         stopRinging();
-        expect(clearSpy).toHaveBeenCalledTimes(1);
-        stopRinging(); // idempotent
         expect(clearSpy).toHaveBeenCalledTimes(1);
     });
 });
