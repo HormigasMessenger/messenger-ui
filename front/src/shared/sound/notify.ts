@@ -60,13 +60,29 @@ export function unlockAudio() {
     if (ac && ac.state === "suspended") ac.resume().catch(() => {});
 }
 
+// Resume a suspended context and WAIT for it — scheduling oscillators while the context is still
+// suspended pins them to a frozen currentTime, so when it finally resumes their start time is already in
+// the past and the browser drops/clips them. That's the "first ring is silent / sometimes no sound" bug.
+async function ensureRunning(ac: AudioContext): Promise<void> {
+    if (ac.state === "suspended") { try { await ac.resume(); } catch { /* blocked outside a gesture */ } }
+}
+
+// Mobile browsers SUSPEND the AudioContext when the page goes to the background and don't auto-resume on
+// return, so a call arriving as you switch back would be silent. Re-warm it whenever the app regains the
+// foreground (best-effort; a plain resume on return-to-foreground is honored in practice).
+if (typeof document !== "undefined") {
+    const rewarm = () => { if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {}); };
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) rewarm(); });
+    if (typeof window !== "undefined") window.addEventListener("focus", rewarm);
+}
+
 // --- incoming/outgoing call ringtone (asset-free, looped) --------------------------------------------
 let ringTimer: ReturnType<typeof setInterval> | null = null;
 
-function ringBurst() {
+async function ringBurst() {
     const ac = audioCtx();
     if (!ac) return;
-    if (ac.state === "suspended") ac.resume().catch(() => {});
+    await ensureRunning(ac);             // resume FIRST, then schedule against a live clock
     const base = ac.currentTime;
     // Two short beeps (classic "ring-ring").
     for (const offset of [0, 0.45]) {
@@ -88,8 +104,8 @@ function ringBurst() {
 /** Start the looping ringtone (incoming call / outgoing ringback). No-op if already ringing. */
 export function startRinging() {
     if (ringTimer) return;
-    ringBurst();
-    ringTimer = setInterval(ringBurst, 2600);
+    void ringBurst();
+    ringTimer = setInterval(() => { void ringBurst(); }, 2600);
 }
 
 /** Stop the ringtone. */

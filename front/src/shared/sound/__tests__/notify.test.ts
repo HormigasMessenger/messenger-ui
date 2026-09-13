@@ -40,6 +40,14 @@ describe("notify — unlockAudio", () => {
 });
 
 describe("notify — ringtone loop", () => {
+    it("resumes a suspended context before ringing (so the first beep isn't dropped)", async () => {
+        fakeCtx.state = "suspended";
+        startRinging();
+        await Promise.resolve();               // flush the awaited resume
+        expect(fakeCtx.resume).toHaveBeenCalled();
+        stopRinging();
+    });
+
     it("startRinging arms exactly one interval; a second call is a no-op; stopRinging clears it", () => {
         vi.useFakeTimers();
         const setSpy = vi.spyOn(globalThis, "setInterval");
