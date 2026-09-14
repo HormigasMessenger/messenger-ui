@@ -1,5 +1,10 @@
 import {createApi, fetchBaseQuery} from "@reduxjs/toolkit/query/react";
-import {IDS_ADMIN_KEY, MESSENGER_IDS_URL} from "@/shared/config/api.ts";
+import {IDS_ADMIN_KEY, MESSENGER_IDS_URL, PEOPLE_SEARCH_PATH} from "@/shared/config/api.ts";
+
+// Absolute (origin-rooted) URL for the session-authed people-search route, so it
+// escapes this api's admin base (MESSENGER_IDS_URL) via RTK's absolute-URL passthrough.
+const peopleSearchUrl = (): string =>
+    (typeof window !== "undefined" ? window.location.origin : "") + PEOPLE_SEARCH_PATH;
 
 // IDS (KratosGate) identity directory, proxied by the edge at {VITE_IDS_URL}/users and gated by
 // the Kratos session cookie; the admin key goes in X-Admin-Key. Cached once and shared across the
@@ -31,9 +36,13 @@ export const idsApi = createApi({
     baseQuery: fetchBaseQuery({
         baseUrl: MESSENGER_IDS_URL,
         credentials: "include",
-        prepareHeaders: (headers) => {
+        prepareHeaders: (headers, {endpoint}) => {
             headers.set("Accept", "application/json");
-            if (IDS_ADMIN_KEY) headers.set("X-Admin-Key", IDS_ADMIN_KEY);
+            // people-search is session-authed (no admin key). Only the /ids/admin
+            // directory lookups carry X-Admin-Key.
+            if (endpoint !== "searchIdsUsers" && IDS_ADMIN_KEY) {
+                headers.set("X-Admin-Key", IDS_ADMIN_KEY);
+            }
             return headers;
         },
     }),
@@ -48,22 +57,31 @@ export const idsApi = createApi({
                 return Array.isArray(users) ? (users as IdsUser[]) : [];
             },
         }),
-        // Server-side, paginated type-ahead over name/email (IDS pg_trgm). Keyset
-        // pagination: pass the previous page's nextToken to get the next page.
+        // Server-side, paginated type-ahead over name/email — the adaptive
+        // people-search endpoint (POST /people/search), session-authed via the edge
+        // (X-User-Id), no admin key. Keyset pagination: pass the previous page's
+        // nextToken (the server's next_cursor) to get the next page. want_refinement
+        // is off for now — the picker renders a flat list; wire the breadcrumb
+        // refinement UI later. Arg/return shape is unchanged so callers don't move.
         searchIdsUsers: builder.query<
             { users: IdsUser[]; nextToken?: string; total: number },
             { q: string; pageToken?: string; pageSize?: number }
         >({
-            query: ({q, pageToken, pageSize = 20}) => {
-                const p = new URLSearchParams({q, page_size: String(pageSize)});
-                if (pageToken) p.set("page_token", pageToken);
-                return `/users/search?${p.toString()}`;
-            },
+            query: ({q, pageToken, pageSize = 20}) => ({
+                url: peopleSearchUrl(),
+                method: "POST",
+                body: {
+                    query: q,
+                    size: pageSize,
+                    ...(pageToken ? {cursor: pageToken} : {}),
+                    want_refinement: false,
+                },
+            }),
             transformResponse: (resp: unknown) => {
-                const r = resp as { users?: unknown; next_token?: string; total?: number };
+                const r = resp as { results?: unknown; next_cursor?: string | null; total?: number };
                 return {
-                    users: Array.isArray(r?.users) ? (r.users as IdsUser[]) : [],
-                    nextToken: r?.next_token || undefined,
+                    users: Array.isArray(r?.results) ? (r.results as IdsUser[]) : [],
+                    nextToken: r?.next_cursor || undefined,
                     total: r?.total ?? 0,
                 };
             },

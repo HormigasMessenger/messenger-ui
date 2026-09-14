@@ -25,6 +25,13 @@ export const WEBPUSH_BASE =
 export const MESSENGER_IDS_URL =
     (import.meta.env.VITE_IDS_URL as string | undefined) ?? "/ids";
 
+// IDS adaptive people-search — the END-USER contact search. Unlike the /ids/admin
+// directory lookups above, this edge route is gated by the Kratos SESSION only
+// (Oathkeeper injects X-User-Id); no admin key is sent. Host-relative, same-origin
+// with the edge. Override the path with VITE_PEOPLE_SEARCH_PATH.
+export const PEOPLE_SEARCH_PATH =
+    (import.meta.env.VITE_PEOPLE_SEARCH_PATH as string | undefined) ?? "/people/search";
+
 // IDS (kratosgate) admin key — for /ids/admin/** directory lookups only.
 export const IDS_ADMIN_KEY =
     (import.meta.env.VITE_IDS_ADMIN_KEY as string | undefined) ?? "";
