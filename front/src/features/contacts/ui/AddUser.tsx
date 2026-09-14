@@ -5,7 +5,15 @@ import {useDispatch, useSelector} from "react-redux";
 import type {AppDispatch, RootState} from "@/store/store.ts";
 import {chatApi, useCreateChatMutation} from "@/features/chat/rest/chatApi.ts";
 import {setSelectedChatId} from "@/features/chat/model/slices/chatUiSlice.ts";
-import {idsDisplayName, useGetIdsUserQuery, useLazySearchIdsUsersQuery, type IdsUser} from "@/features/directory";
+import {
+    idsDisplayName,
+    RefinementBar,
+    useGetIdsUserQuery,
+    useLazySearchIdsUsersQuery,
+    type IdsConstraint,
+    type IdsRefinement,
+    type IdsUser,
+} from "@/features/directory";
 import {isNotLogged} from "@/shared/utils/checks.ts";
 import {resolveChatPair} from "@/features/contacts/model/resolveChatPair.ts";
 import {logger} from "@/shared/logger/logger.ts";
@@ -43,13 +51,19 @@ export default function AddContactPage() {
     // a second one (see startChat). Shares the cache with the chat list (RTK Query dedups).
     const {data: existingChats} = chatApi.useGetChatsQuery({myId}, {skip: isNotLogged(myId)});
 
-    // Debounced, server-side, paginated search (IDS /users/search, pg_trgm) — no
+    // Debounced, server-side, paginated adaptive search (IDS POST /people/search) — no
     // full directory download, no client-side filtering.
     const MIN_CHARS = 2;
     const [query, setQuery] = useState("");
     const [debounced, setDebounced] = useState("");
     const [items, setItems] = useState<IdsUser[]>([]);
     const [nextToken, setNextToken] = useState<string | undefined>(undefined);
+    // Adaptive search: applied breadcrumb constraints + the server's suggested
+    // next refinement (docs/adaptive-search). Picking one ANDs a constraint and
+    // re-runs the search, narrowing the list.
+    const [constraints, setConstraints] = useState<IdsConstraint[]>([]);
+    const [refinement, setRefinement] = useState<IdsRefinement | undefined>(undefined);
+    const constraintsKey = JSON.stringify(constraints);
     const [runSearch, {isFetching, isError}] = useLazySearchIdsUsersQuery();
 
     useEffect(() => {
@@ -58,18 +72,34 @@ export default function AddContactPage() {
     }, [query]);
 
     useEffect(() => {
-        if (debounced.length < MIN_CHARS) return; // too short → show nothing (derived below), don't fetch
+        if (debounced.length < MIN_CHARS) { // too short → show nothing (derived below), don't fetch
+            setRefinement(undefined);
+            return;
+        }
         let cancelled = false;
-        runSearch({q: debounced})
+        runSearch({q: debounced, constraints})
             .unwrap()
             .then((page) => {
                 if (cancelled) return;
                 setItems(page.users.filter((u) => u.id !== myId));
                 setNextToken(page.nextToken);
+                setRefinement(page.refinement);
             })
             .catch(() => { /* isError surfaces it */ });
         return () => { cancelled = true; };
-    }, [debounced, myId, runSearch]);
+        // constraints tracked via constraintsKey (stable string) to re-search on change.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [debounced, myId, runSearch, constraintsKey]);
+
+    // Apply a refinement value as a breadcrumb (replacing any prior value for the
+    // same discriminator); remove drops it. Both re-run the search via the effect.
+    function applyConstraint(c: IdsConstraint) {
+        setRefinement(undefined); // avoid a flash of the old suggestion before the re-search
+        setConstraints((prev) => [...prev.filter((x) => x.field !== c.field), c]);
+    }
+    function removeConstraint(field: string) {
+        setConstraints((prev) => prev.filter((x) => x.field !== field));
+    }
 
     // Short query → show nothing (derived, so the effect never has to synchronously clear state on a
     // keystroke). Stale results from a prior longer query stay in `items` but are hidden until the next
@@ -81,7 +111,7 @@ export default function AddContactPage() {
     async function loadMore() {
         if (!nextToken) return;
         try {
-            const page = await runSearch({q: debounced, pageToken: nextToken}).unwrap();
+            const page = await runSearch({q: debounced, pageToken: nextToken, constraints}).unwrap();
             setItems((prev) => [...prev, ...page.users.filter((u) => u.id !== myId)]);
             setNextToken(page.nextToken);
         } catch { /* keep current items */ }
@@ -153,6 +183,15 @@ export default function AddContactPage() {
                     focus:outline-none focus:ring-2 focus:ring-teal-600"
                     autoFocus
                 />
+
+                {showResults && (
+                    <RefinementBar
+                        constraints={constraints}
+                        refinement={refinement}
+                        onApply={applyConstraint}
+                        onRemove={removeConstraint}
+                    />
+                )}
 
                 <div className="max-h-80 overflow-y-auto flex flex-col gap-1.5">
                     {debounced.length < MIN_CHARS && (

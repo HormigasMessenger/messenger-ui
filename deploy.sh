@@ -19,9 +19,7 @@
 #   REMOTE_DIR                 [/tmp/front4mess-src]         build context dir on the host
 #   DOCKER                     [sudo docker]                 docker command on the host
 #   SSH_OPTS                   []                            extra ssh/rsync options
-#   VITE_IDS_ADMIN_KEY         []  (⚠ baked into the JS)     IDS /ids/admin key (X-Admin-Key)
 #   VITE_MESSENGER_ADMIN_KEY   []  (⚠ baked into the JS)     messenger admin key (POST /api/chats)
-#   VITE_IDS_URL               [/ids/admin]                  edge path for the IDS directory
 #   VITE_MESSENGER_BASE        [/messenger]                  edge prefix for messenger REST/WS
 #   VITE_KRATOS_URL            [/.ory/kratos/public]         Kratos public API on the edge
 #   VITE_TURN_HOST/USER/PASS   [91.99.6.25/user/pass]        coturn ICE config
@@ -53,8 +51,6 @@ cat > "$ENVFILE" <<ENV
 BASE=$BASE
 VITE_MESSENGER_BASE=${VITE_MESSENGER_BASE:-/messenger}
 VITE_KRATOS_URL=${VITE_KRATOS_URL:-/.ory/kratos/public}
-VITE_IDS_URL=${VITE_IDS_URL:-/ids/admin}
-VITE_IDS_ADMIN_KEY=${VITE_IDS_ADMIN_KEY:-}
 VITE_MESSENGER_ADMIN_KEY=${VITE_MESSENGER_ADMIN_KEY:-}
 VITE_TURN_HOST=${VITE_TURN_HOST:-91.99.6.25}
 VITE_TURN_USER=${VITE_TURN_USER:-user}

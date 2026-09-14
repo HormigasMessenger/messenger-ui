@@ -15,30 +15,18 @@ export const WEBPUSH_BASE =
     (import.meta.env.VITE_WEBPUSH_BASE as string | undefined) ?? "/webpush";
 
 // IDS (KratosGate) admin directory for user search. The edge route (host-relative, same
-// origin) is provided by the platform; the frontend sends the IDS admin key as X-Admin-Key.
-// Override the path with VITE_IDS_URL.
+// IDS (KratosGate) identity directory — reached through the edge under /people/**
+// and gated by the Kratos SESSION only (Oathkeeper injects X-User-Id). The
+// frontend no longer holds any IDS admin key: search, name-by-id and batch all go
+// through session-authed routes. Override the base with VITE_PEOPLE_BASE.
+export const PEOPLE_BASE_PATH =
+    (import.meta.env.VITE_PEOPLE_BASE as string | undefined) ?? "/people";
+
+// Messenger admin key — for the messenger's OWN admin/service endpoints (e.g.
+// POST /api/chats provisioning). This is unrelated to IDS; removing it from the
+// browser needs a messenger-backend change and is out of scope here.
 //
-// ⚠️ SECURITY / TEMPORARY DEMO-ONLY: these admin keys live in the frontend .env and are
-// baked into the JS bundle at build time — anyone who loads the app can read them. This is a
-// concept-demo crutch. The real fix is a server-side proxy (or a short-lived, scoped token)
-// that holds the admin key so it never reaches the browser. Rotate + remove after the demo.
-export const MESSENGER_IDS_URL =
-    (import.meta.env.VITE_IDS_URL as string | undefined) ?? "/ids";
-
-// IDS adaptive people-search — the END-USER contact search. Unlike the /ids/admin
-// directory lookups above, this edge route is gated by the Kratos SESSION only
-// (Oathkeeper injects X-User-Id); no admin key is sent. Host-relative, same-origin
-// with the edge. Override the path with VITE_PEOPLE_SEARCH_PATH.
-export const PEOPLE_SEARCH_PATH =
-    (import.meta.env.VITE_PEOPLE_SEARCH_PATH as string | undefined) ?? "/people/search";
-
-// IDS (kratosgate) admin key — for /ids/admin/** directory lookups only.
-export const IDS_ADMIN_KEY =
-    (import.meta.env.VITE_IDS_ADMIN_KEY as string | undefined) ?? "";
-
-// Messenger admin key — for the messenger's own admin/service endpoints (e.g.
-// POST /api/chats provisioning). This is a DIFFERENT key from IDS_ADMIN_KEY; sending the
-// IDS key here yields 403 "X-Admin-Key inválido". Falls back to IDS_ADMIN_KEY only for
-// backward compatibility with single-key setups where both backends share one key.
+// ⚠️ SECURITY / TEMPORARY DEMO-ONLY: this key is still baked into the JS bundle at
+// build time. The real fix is a server-side gate so it never reaches the browser.
 export const MESSENGER_ADMIN_KEY =
-    (import.meta.env.VITE_MESSENGER_ADMIN_KEY as string | undefined) ?? IDS_ADMIN_KEY;
+    (import.meta.env.VITE_MESSENGER_ADMIN_KEY as string | undefined) ?? "";

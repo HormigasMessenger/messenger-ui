@@ -16,8 +16,6 @@ services:
         # Baked into the JS bundle (temporary demo design — see front/.env.example).
         VITE_MESSENGER_BASE: ${VITE_MESSENGER_BASE:-/messenger}
         VITE_KRATOS_URL: ${VITE_KRATOS_URL:-/.ory/kratos/public}
-        VITE_IDS_URL: ${VITE_IDS_URL:-/ids/admin}
-        VITE_IDS_ADMIN_KEY: ${VITE_IDS_ADMIN_KEY:-}
         VITE_MESSENGER_ADMIN_KEY: ${VITE_MESSENGER_ADMIN_KEY:-}
         VITE_TURN_HOST: ${VITE_TURN_HOST:-91.99.6.25}
         VITE_TURN_USER: ${VITE_TURN_USER:-user}
