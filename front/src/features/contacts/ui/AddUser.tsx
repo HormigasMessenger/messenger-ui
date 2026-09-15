@@ -53,7 +53,9 @@ export default function AddContactPage() {
 
     // Debounced, server-side, paginated adaptive search (IDS POST /people/search) — no
     // full directory download, no client-side filtering.
-    const MIN_CHARS = 2;
+    // Aligned with the server's SEARCH_MIN_QUERY_LEN (3): the list AND the
+    // adaptive clusters both start at 3 chars, so behaviour is consistent.
+    const MIN_CHARS = 3;
     const [query, setQuery] = useState("");
     const [debounced, setDebounced] = useState("");
     const [items, setItems] = useState<IdsUser[]>([]);
