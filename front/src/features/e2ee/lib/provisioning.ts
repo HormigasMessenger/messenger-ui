@@ -1,7 +1,7 @@
 import {KeyHelper} from "@privacyresearch/libsignal-protocol-typescript";
 import {SignalStore} from "./signalStore.ts";
 import {b64} from "./deviceKey.ts";
-import {publishKeys, replenishOneTime, type PublishBody, type PreKeyPub} from "./keyDirectory.ts";
+import {publishKeys, replenishOneTime, selfCount, KeyDirectoryError, type PublishBody, type PreKeyPub} from "./keyDirectory.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
 // Device provisioning: generate this device's Signal keys, persist the PRIVATES to the wrapped store, and
@@ -28,6 +28,22 @@ export async function ensureProvisioned(store = new SignalStore()): Promise<{sto
     const existing = await store.getIdentityKeyPair();
     if (existing) {
         const deviceId = (await store.getDeviceId())!;
+        // Self-heal: this device has local keys, but a prior publish may have failed
+        // (e.g. the directory was unreachable) — then the directory doesn't know this
+        // device and X3DH with it silently fails. Detect via a self-count 404 and
+        // RE-PUBLISH from the local store: same identity (never rotated), a fresh
+        // signed prekey + one-time-prekey pool. Any other error (network/500) must
+        // NOT block startup — log and carry on.
+        try {
+            await selfCount(deviceId);
+        } catch (e) {
+            if (e instanceof KeyDirectoryError && e.status === 404) {
+                await buildAndPublish(store, deviceId, existing);
+                logger.warn("e2ee: device was missing from the directory — re-published", {deviceId});
+                return {store, deviceId, provisioned: true};
+            }
+            logger.warn("e2ee: self-count failed (non-404); skipping self-heal", {deviceId});
+        }
         return {store, deviceId, provisioned: false};
     }
 
@@ -35,12 +51,19 @@ export async function ensureProvisioned(store = new SignalStore()): Promise<{sto
     const registrationId = KeyHelper.generateRegistrationId();
     const deviceId = randomDeviceId();
     await store.setup(identity, registrationId, deviceId);
+    await buildAndPublish(store, deviceId, identity);
+    logger.debug("e2ee: device provisioned + published", {deviceId});
+    return {store, deviceId, provisioned: true};
+}
 
+// buildAndPublish generates a fresh signed prekey + one-time-prekey pool for the
+// (already-set-up) identity, persists the privates, and publishes the publics.
+// Shared by first-run provisioning and the self-heal re-publish. The identity key
+// is passed in unchanged — it is this device's stable identity and is never rotated.
+async function buildAndPublish(store: SignalStore, deviceId: string, identity: {pubKey: ArrayBuffer; privKey: ArrayBuffer}): Promise<void> {
     const signed = await KeyHelper.generateSignedPreKey(identity, SPK_ID);
     await store.storeSignedPreKey(SPK_ID, signed.keyPair);
-
     const opks = await generateOPKs(store, OPK_BATCH);
-
     const body: PublishBody = {
         deviceId,
         identityKey: b64(identity.pubKey),
@@ -48,8 +71,7 @@ export async function ensureProvisioned(store = new SignalStore()): Promise<{sto
         oneTimePreKeys: opks,
     };
     await publishKeys(body);
-    logger.debug("e2ee: device provisioned + published", {deviceId, opks: opks.length});
-    return {store, deviceId, provisioned: true};
+    logger.debug("e2ee: keys published", {deviceId, opks: opks.length});
 }
 
 /** Generate `count` one-time prekeys, persist their privates, return the PUBLIC halves for the directory. */

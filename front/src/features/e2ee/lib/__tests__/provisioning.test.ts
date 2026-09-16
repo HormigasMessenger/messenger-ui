@@ -53,14 +53,36 @@ describe("ensureProvisioned", () => {
         expect(await store.loadSignedPreKey(1)).toBeTruthy();
     });
 
-    it("second run: idempotent — does NOT re-publish or change the identity", async () => {
+    it("second run (known device): self-counts but does NOT re-publish or change identity", async () => {
         const store = new SignalStore();
         const first = await ensureProvisioned(store);
         fetchMock.mockClear();
         const second = await ensureProvisioned(store);
         expect(second.provisioned).toBe(false);
         expect(second.deviceId).toBe(first.deviceId);
-        expect(fetchMock).not.toHaveBeenCalled();                  // no re-publish
+        // It checks the directory (self-count) to detect a missing device, but the
+        // device is known here, so there is no re-publish.
+        const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+        expect(urls.some((u) => u.startsWith("/key-directory/v1/keys/self/count"))).toBe(true);
+        expect(urls).not.toContain("/key-directory/v1/keys");      // no publish POST
+    });
+
+    it("self-heal: local identity but the directory doesn't know the device → re-publishes", async () => {
+        const store = new SignalStore();
+        const first = await ensureProvisioned(store);
+        // The directory 404s the self-count (device unknown, e.g. a prior publish
+        // failed while it was unreachable) but accepts the re-publish.
+        fetchMock.mockImplementation((url: string) =>
+            String(url).includes("/keys/self/count")
+                ? Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve("") })
+                : Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve(JSON.stringify({ deviceId: "d", oneTimePreKeysRemaining: 20 })) })
+        );
+        fetchMock.mockClear();
+        const healed = await ensureProvisioned(store);
+        expect(healed.provisioned).toBe(true);
+        expect(healed.deviceId).toBe(first.deviceId);              // SAME device / identity, not rotated
+        const urls = fetchMock.mock.calls.map((c) => c[0] as string);
+        expect(urls).toContain("/key-directory/v1/keys");          // re-published the bundle
     });
 });
 
