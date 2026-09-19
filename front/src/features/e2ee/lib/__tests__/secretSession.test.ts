@@ -7,6 +7,7 @@ import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import {SignalStore} from "../signalStore";
 import {ensureProvisioned} from "../provisioning";
 import {encryptTo, decryptFrom} from "../secretSession";
+import {b64} from "../deviceKey";
 
 // End-to-end 2c+2d: two independent "devices" (isolated IndexedDB stores) provision into a shared FAKE
 // directory, then Alice encrypts to Bob and Bob decrypts — through the REAL SignalStore + wrapping + the
@@ -97,5 +98,36 @@ describe("secretSession — X3DH + Double Ratchet, end to end", () => {
         expect(await decryptFrom(bob.store, "alice", bob.deviceId, m2)).toBe("two");
         // replay m1 → the message key is gone
         await expect(decryptFrom(bob.store, "alice", bob.deviceId, m1)).rejects.toBeTruthy();
+    });
+
+    it("peer re-provisions (new device) → sender heals; the stale peer identity is pruned", async () => {
+        const alice = await provisionAs("alice", "e2ee-rp-a");
+        let bob = await provisionAs("bob", "e2ee-rp-b1");
+        const oldBobDevice = bob.deviceId;
+
+        // Establish + exchange once — Alice pins Bob's ORIGINAL device identity.
+        const e0 = await encryptTo(alice.store, "bob", alice.deviceId, "hi");
+        expect(await decryptFrom(bob.store, "alice", bob.deviceId, e0)).toBe("hi");
+
+        // Bob re-provisions on a cleared store → NEW deviceId + identity. The directory now
+        // reflects ONLY the fresh device (it replaced Bob's entry).
+        delete dir["bob"];
+        bob = await provisionAs("bob", "e2ee-rp-b2");
+        expect(bob.deviceId).not.toBe(oldBobDevice);
+
+        // Alice sends again → must establish a session to the fresh device, and the fresh Bob decrypts.
+        const e1 = await encryptTo(alice.store, "bob", alice.deviceId, "still there?");
+        expect(await decryptFrom(bob.store, "alice", bob.deviceId, e1)).toBe("still there?");
+
+        // The stale OLD-device identity must have been pruned, so the safety number is now computed
+        // over Bob's CURRENT identity — this is exactly what makes the numbers reconverge.
+        const pinned = await alice.store.getPeerIdentity("bob");
+        const bobCurrentOwn = (await bob.store.getIdentityKeyPair())!.pubKey;
+        expect(pinned).toBeTruthy();
+        expect(b64(pinned!)).toBe(b64(bobCurrentOwn));
+
+        // And the healed session is bidirectional.
+        const r1 = await encryptTo(bob.store, "alice", bob.deviceId, "yes");
+        expect(await decryptFrom(alice.store, "bob", alice.deviceId, r1)).toBe("yes");
     });
 });

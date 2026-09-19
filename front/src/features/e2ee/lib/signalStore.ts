@@ -53,10 +53,16 @@ export class SignalStore implements StorageType {
     }
 
     // --- peer identities (TOFU) ---
-    async isTrustedIdentity(addr: string, identityKey: ArrayBuffer): Promise<boolean> {
-        const known = (await (await this.db()).get(PEERS, addr)) as ArrayBuffer | undefined;
-        if (!known) return true;                              // first contact → trust (safety number to be verified)
-        return b64eq(known, identityKey);                     // changed key → NOT trusted (safety-number-changed)
+    async isTrustedIdentity(_addr: string, _identityKey: ArrayBuffer): Promise<boolean> {
+        // TOFU with re-pinning: accept both first contact AND a later identity change.
+        // A peer that re-provisions (cleared storage / new device) publishes a NEW identity;
+        // rejecting it here (returning false on change) would DEADLOCK — the stale side could
+        // neither re-establish a session (send) nor accept the peer's new prekey (receive), and
+        // messaging/safety-numbers would never recover. Instead we let the change through and
+        // surface it out-of-band: `saveIdentity` returns whether the key changed (caller warns),
+        // and the safety number shifts → any prior verification auto-drops → "re-verify" prompt.
+        // The safety number, compared in person, is the real MITM check — not this in-band gate.
+        return true;
     }
     async saveIdentity(addr: string, publicKey: ArrayBuffer): Promise<boolean> {
         const d = await this.db();
@@ -105,6 +111,23 @@ export class SignalStore implements StorageType {
     }
     /** Drop a session so the next handshake starts FRESH — used by recovery to avoid riding a stalled chain. */
     async deleteSession(addr: string): Promise<void> { await (await this.db()).delete(SESSIONS, addr); }
+
+    /**
+     * Prune stored PEER-IDENTITY entries for `userId`'s devices that are NOT in `keepAddrs`.
+     * A peer that re-provisions (cleared storage / new device) gets a NEW device address, so its old
+     * device's stored identity LINGERS. `getPeerIdentity` (find-first) could then return that stale key,
+     * and the safety number computed against it never matches the peer's current one. Called on every
+     * `ensureSessions` with the current roster's addresses so only live devices remain. Addresses are
+     * "userId.deviceNum"; we scope the scan to this user's prefix so other peers are untouched. We prune
+     * ONLY identities (PEERS): stale SESSIONS are inert (encrypt/decrypt only ever address the current
+     * roster / envelope device) and the SESSIONS store also holds the recovery lane, which must survive.
+     */
+    async retainPeerDevices(userId: string, keepAddrs: Set<string>): Promise<void> {
+        const d = await this.db();
+        const prefix = userId + ".";
+        const keys = (await d.getAllKeys(PEERS)) as string[];
+        for (const k of keys) if (k.startsWith(prefix) && !keepAddrs.has(k)) await d.delete(PEERS, k);
+    }
 
     // --- wipe (logout) ---
     async clear(): Promise<void> {

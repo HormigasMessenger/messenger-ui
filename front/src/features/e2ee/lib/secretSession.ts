@@ -2,6 +2,7 @@ import {SignalProtocolAddress, SessionBuilder, SessionCipher} from "@privacyrese
 import type {SignalStore} from "./signalStore.ts";
 import {fetchUserKeys} from "./keyDirectory.ts";
 import {unb64, b64} from "./deviceKey.ts";
+import {clearVerified} from "./safetyNumber.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
 // Phase 2c + 2d core: turn a peer userId + plaintext into an opaque E2EE envelope (encrypt to EACH of the
@@ -46,8 +47,21 @@ async function ensureSessions(store: SignalStore, peerUserId: string): Promise<s
     if (devices.length === 0) throw new Error(NO_PEER_KEYS);   // peer never provisioned → can't X3DH
     for (const dev of devices) {
         const addr = addrOf(peerUserId, dev.deviceId);
-        if (await store.loadSession(addr.toString())) { known.push(dev.deviceId); continue; }
-        // No session → run X3DH from this bundle.
+        const fresh = unb64(dev.identityKey);
+        if (await store.loadSession(addr.toString())) {
+            // A session exists — but the peer may have RE-PROVISIONED (new identity key).
+            // The old session then carries a stale identity and its safety number can
+            // never match the peer's. Compare the directory's CURRENT identity with the
+            // one this session was built on; if unchanged, keep the session.
+            const stored = await store.loadIdentityKey(addr.toString());
+            if (stored && b64(stored) === b64(fresh)) { known.push(dev.deviceId); continue; }
+            // Identity changed → tear the stale session down and re-key from the fresh
+            // bundle below. Drop verification so the user re-verifies the new number.
+            await store.deleteSession(addr.toString());
+            clearVerified(peerUserId);
+            logger.warn("e2ee: peer identity changed — re-establishing session", {peerUserId, dev: dev.deviceId});
+        }
+        // No session (or the stale one was just torn down) → run X3DH from this bundle.
         const builder = new SessionBuilder(store, addr);
         await builder.processPreKey({
             registrationId: addrDeviceNum(dev.deviceId),          // directory carries no regId → synthesize (non-crypto)
@@ -59,7 +73,33 @@ async function ensureSessions(store: SignalStore, peerUserId: string): Promise<s
         need.push(dev.deviceId);
     }
     if (need.length) logger.debug("e2ee: established sessions", {peerUserId, newDevices: need.length});
+    // Drop stored identities for any of the peer's OLD devices no longer in the roster (e.g. after a
+    // re-provision). Otherwise a stale peer identity lingers and the safety number never reconverges.
+    await store.retainPeerDevices(peerUserId, new Set(known.map((u) => addrOf(peerUserId, u).toString())));
     return known;
+}
+
+/**
+ * Reconcile our stored peer state with the directory's CURRENT roster: re-pin each live device's identity
+ * and PRUNE every stored identity for a device no longer published. A peer that re-provisions leaves dead
+ * device identities behind; `getPeerIdentity` (find-first) could then return a stale one and the safety
+ * number never matches. Unlike `ensureSessions`, this establishes no session — it only refreshes identities
+ * — so the safety-number view can converge without sending a message. (Fetching the roster consumes an OPK
+ * per device server-side, so this is called on explicit user action, e.g. opening the safety-number view.)
+ * Returns the number of live devices the directory reports (1 in the normal 1:1 case; >1 signals the
+ * directory is still serving dead devices, which no client-side prune can disambiguate).
+ */
+export async function reconcilePeerIdentities(store: SignalStore, peerUserId: string): Promise<number> {
+    const {devices} = await fetchUserKeys(peerUserId);
+    if (devices.length === 0) return 0;                         // peer unprovisioned → nothing to reconcile
+    const keep = new Set<string>();
+    for (const dev of devices) {
+        const addr = addrOf(peerUserId, dev.deviceId).toString();
+        keep.add(addr);
+        await store.saveIdentity(addr, unb64(dev.identityKey));  // re-pin the CURRENT identity for this device
+    }
+    await store.retainPeerDevices(peerUserId, keep);            // drop identities of devices no longer published
+    return devices.length;
 }
 
 /** Encrypt `plaintext` to every device of `peerUserId`. `myDeviceId` = our own device uuid (for the envelope). */

@@ -1,6 +1,6 @@
 import {useEffect, useState} from "react";
 import {useTranslation} from "react-i18next";
-import {computeSafetyNumber, formatSafetyNumber, markVerified, clearVerified, isVerified} from "../index.ts";
+import {computeSafetyNumber, formatSafetyNumber, markVerified, clearVerified, isVerified, reconcilePeerIdentities, ensureProvisioned} from "../index.ts";
 
 /**
  * Safety-number verification (MITM check). Shows the fingerprint derived from both parties' identity keys;
@@ -16,11 +16,19 @@ export function SafetyNumberModal({myUserId, peerUserId, peerName, onClose}: {
 
     useEffect(() => {
         let alive = true;
-        void computeSafetyNumber(myUserId, peerUserId).then((n) => {
+        void (async () => {
+            // Reconcile with the directory's CURRENT roster FIRST: re-pin the live device identity and prune
+            // any dead ones left by the peer's past re-provisions. Without this, getPeerIdentity (find-first)
+            // may hash a stale device's key and the number never matches. Then compute over the fresh state.
+            try {
+                const {store} = await ensureProvisioned();
+                await reconcilePeerIdentities(store, peerUserId);
+            } catch { /* offline / no keys — fall back to whatever is stored */ }
+            const n = await computeSafetyNumber(myUserId, peerUserId);
             if (!alive) return;
             setNum(n);
             setVerified(isVerified(peerUserId, n));
-        });
+        })();
         return () => { alive = false; };
     }, [myUserId, peerUserId]);
 
