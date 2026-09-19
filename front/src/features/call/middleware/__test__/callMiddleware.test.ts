@@ -48,7 +48,7 @@ describe("callMiddleware", () => {
             dispatch: vi.fn(),
             getState: vi.fn(() => ({
                 call: {
-                    incomingOfferData: { from: "peerX", offer: {} },
+                    incomingOfferData: { from: "peerX", sdp: "ENC" },
                     peerId: "peerY",
                     status: "idle",
                 },
@@ -80,27 +80,27 @@ describe("callMiddleware", () => {
     });
 
     it("ws/incoming: call:offer диспатчит incomingOffer", () => {
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peer1", offer: {} as RTCSessionDescriptionInit};
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peer1", sdp: "ENC"};
         middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(store.dispatch).toHaveBeenCalledWith(
-            incomingOffer({ from: "peer1", offer: {} as RTCSessionDescriptionInit})
+            incomingOffer({ from: "peer1", sdp: "ENC"})
         );
     });
 
     it("ws/incoming: call:offer протаскивает conversationId кадра в incomingOffer (ответ пиру без чата в списке)", () => {
         // The frame's conversationId must reach the slice so our answer/end route back even when this peer
         // isn't in the chat directory (empty conversations are hidden from /api/chats).
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peer1", offer: {} as RTCSessionDescriptionInit, conversationId: "conv-42" };
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peer1", sdp: "ENC", conversationId: "conv-42" };
         middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(store.dispatch).toHaveBeenCalledWith(
-            incomingOffer({ from: "peer1", offer: {} as RTCSessionDescriptionInit, media: undefined, conversationId: "conv-42" })
+            incomingOffer({ from: "peer1", sdp: "ENC", media: undefined, conversationId: "conv-42" })
         );
     });
 
     it("ws/incoming: call:answer вызывает handleAnswer и диспатчит incomingAnswer (когда есть pc)", async () => {
         // We have a pending outgoing call → getConnectionState is truthy → transition to connecting.
         webRTCService.getConnectionState = vi.fn(() => "connecting" as RTCPeerConnectionState);
-        const msg: IncomingWebRTCMessage = { type: "call:answer", from: "peer2", answer: {} as RTCSessionDescriptionInit};
+        const msg: IncomingWebRTCMessage = { type: "call:answer", from: "peer2", sdp: "ENC"};
         await middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.handleAnswer).toHaveBeenCalledWith(msg);
         expect(store.dispatch).toHaveBeenCalledWith(incomingAnswer());
@@ -108,7 +108,7 @@ describe("callMiddleware", () => {
 
     it("ws/incoming: call:answer БЕЗ активного pc НЕ диспатчит incomingAnswer (поздний/сторонний answer)", async () => {
         // getConnectionState is null (default mock) → a stray answer must not flip idle → connecting.
-        const msg: IncomingWebRTCMessage = { type: "call:answer", from: "peer2", answer: {} as RTCSessionDescriptionInit};
+        const msg: IncomingWebRTCMessage = { type: "call:answer", from: "peer2", sdp: "ENC"};
         await middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.handleAnswer).toHaveBeenCalledWith(msg);
         expect(store.dispatch).not.toHaveBeenCalledWith(incomingAnswer());
@@ -116,26 +116,26 @@ describe("callMiddleware", () => {
 
     it("ws/incoming: call:offer при НЕ-idle статусе отклоняется (declineOffer), не клоббит активный звонок", () => {
         store.getState = vi.fn(() => ({ call: { status: "in_call", peerId: "peerY", incomingOfferData: null } }));
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerZ", offer: {} as RTCSessionDescriptionInit };
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerZ", sdp: "ENC" };
         middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.declineOffer).toHaveBeenCalledWith("peerZ");
-        expect(store.dispatch).not.toHaveBeenCalledWith(incomingOffer({ from: "peerZ", offer: {} as RTCSessionDescriptionInit }));
+        expect(store.dispatch).not.toHaveBeenCalledWith(incomingOffer({ from: "peerZ", sdp: "ENC" }));
     });
 
     it("ws/incoming: call:offer glare — polite сторона (myId < from) уступает и отвечает, не отклоняет", async () => {
         // Both calling each other (fallback). We're "aaa" < "peerCB" → polite → yield and answer.
         store.getState = vi.fn(() => ({ user: { id: "aaa" }, call: { status: "calling", peerId: "peerCB", incomingOfferData: null } }));
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerCB", offer: {} as RTCSessionDescriptionInit, media: "video" };
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerCB", sdp: "ENC", media: "video" };
         await middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.endRemote).toHaveBeenCalled();
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
-        expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerCB", offer: {} as RTCSessionDescriptionInit, media: "video" });
+        expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerCB", sdp: "ENC", media: "video" });
         expect(store.dispatch).toHaveBeenCalledWith(acceptCall());
     });
 
     it("ws/incoming: call:offer glare — impolite сторона (myId > from) держит свой offer, не отвечает и не отклоняет", async () => {
         store.getState = vi.fn(() => ({ user: { id: "zzz" }, call: { status: "calling", peerId: "peerA", incomingOfferData: null } }));
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerA", offer: {} as RTCSessionDescriptionInit };
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerA", sdp: "ENC" };
         await middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.handleOffer).not.toHaveBeenCalled();
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
@@ -144,15 +144,15 @@ describe("callMiddleware", () => {
 
     it("ws/incoming: call:offer РЕ-offer от того же абонента, пока мы ringing → обновляем, НЕ отклоняем (баг: убивал звонок)", () => {
         store.getState = vi.fn(() => ({ call: { status: "ringing", peerId: "peerR", incomingOfferData: {} } }));
-        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerR", offer: { sdp: "x" } as RTCSessionDescriptionInit, media: "audio" };
+        const msg: IncomingWebRTCMessage = { type: "call:offer", from: "peerR", sdp: "ENC", media: "audio" };
         middleware(store)(next)({ type: "ws/incoming", payload: msg });
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
-        expect(store.dispatch).toHaveBeenCalledWith(incomingOffer({ from: "peerR", offer: { sdp: "x" } as RTCSessionDescriptionInit, media: "audio" }));
+        expect(store.dispatch).toHaveBeenCalledWith(incomingOffer({ from: "peerR", sdp: "ENC", media: "audio" }));
     });
 
     it("ws/incoming: call:offer от того же абонента, пока мы connecting → игнор (НЕ отклоняем)", () => {
         store.getState = vi.fn(() => ({ call: { status: "connecting", peerId: "peerR", incomingOfferData: {} } }));
-        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerR", offer: {} as RTCSessionDescriptionInit } });
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerR", sdp: "ENC" } });
         expect(webRTCService.declineOffer).not.toHaveBeenCalled();
         expect(webRTCService.handleOffer).not.toHaveBeenCalled();
     });
@@ -164,7 +164,7 @@ describe("callMiddleware", () => {
             call: { status: "idle", peerId: null, incomingOfferData: null },
             user: { id: "me" }, stickyChats: { byId: {} }, [chatApi.reducerPath]: { queries: {} },
         }));
-        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", offer: {} as RTCSessionDescriptionInit, media: "audio" } });
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", sdp: "ENC", media: "audio" } });
         expect(showCallNotification).toHaveBeenCalledWith(expect.objectContaining({ callerId: "peerN", media: "audio" }));
         Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
     });
@@ -176,7 +176,7 @@ describe("callMiddleware", () => {
             call: { status: "idle", peerId: null, incomingOfferData: null },
             user: { id: "me" }, stickyChats: { byId: {} }, [chatApi.reducerPath]: { queries: {} },
         }));
-        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", offer: {} as RTCSessionDescriptionInit } });
+        middleware(store)(next)({ type: "ws/incoming", payload: { type: "call:offer", from: "peerN", sdp: "ENC" } });
         expect(showCallNotification).not.toHaveBeenCalled();
     });
 
@@ -274,7 +274,7 @@ describe("callMiddleware", () => {
     it("call/acceptCall вызывает handleOffer если есть incomingOfferData", async () => {
         const action = { type: "call/acceptCall" };
         await middleware(store)(next)(action);
-        expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerX", offer: {} });
+        expect(webRTCService.handleOffer).toHaveBeenCalledWith({ from: "peerX", sdp: "ENC" });
     });
 
     it("call/localEnd вызывает hangUp", () => {

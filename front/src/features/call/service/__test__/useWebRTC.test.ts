@@ -12,6 +12,17 @@ vi.mock("react-hot-toast", () => ({
     },
 }));
 
+// E2EE signaling: the service encrypts every SDP before sending and decrypts on receive. Mock with a
+// reversible marker so we can assert the wire carries CIPHERTEXT (never a plaintext SDP) and round-trips.
+vi.mock("@/features/e2ee", () => ({
+    encryptForSend: vi.fn(async (_peer: string, text: string) => "ENC:" + text),
+    decryptReceived: vi.fn(async (_from: string, body: string) => body.replace(/^ENC:/, "")),
+}));
+import { encryptForSend, decryptReceived } from "@/features/e2ee";
+const encMock = vi.mocked(encryptForSend);
+const decMock = vi.mocked(decryptReceived);
+const enc = (o: unknown) => "ENC:" + JSON.stringify(o);
+
 class MockRTCPeerConnection {
     static generateCertificate = vi.fn().mockResolvedValue({});
 
@@ -80,73 +91,92 @@ describe("WebRTCService", () => {
         webRTCService.setStreamCallbacks(onLocalStream, onRemoteStream);
 
         vi.clearAllMocks();
+        // Restore the reversible E2EE defaults after clearAllMocks (per-test overrides use *Once on top).
+        encMock.mockImplementation(async (_peer: string, text: string) => "ENC:" + text);
+        decMock.mockImplementation(async (_from: string, body: string) => body.replace(/^ENC:/, ""));
     });
 
-    it("startCall — успешно создаёт offer", async () => {
+    it("startCall — encrypts the offer SDP onto the wire (no plaintext)", async () => {
         await webRTCService.startCall("peer1");
 
         expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled();
         expect(sendWS).toHaveBeenCalledWith(expect.objectContaining({
             type: "call:offer",
             to: "peer1",
-            offer: { sdp: "offer-sdp", type: "offer" },
+            sdp: enc({ sdp: "offer-sdp", type: "offer" }),   // ciphertext, not the raw SDP
             media: "video",
-            callId: expect.any(String),   // per-attempt id now rides in the offer
+            callId: expect.any(String),
         }));
         expect(onLocalStream).toHaveBeenCalled();
     });
 
-    it("handleOffer — вызывает call:end если уже есть pc", async () => {
+    it("startCall — fail-closed: encryption failure ends the call, no plaintext offer sent", async () => {
+        encMock.mockRejectedValueOnce(new Error("NO_PEER_KEYS"));
+        await expect(webRTCService.startCall("peerNoKeys")).rejects.toThrow();
+        const sentTypes = (sendWS as ReturnType<typeof vi.fn>).mock.calls.map((c) => (c[0] as OutgoingWebRTCMessage).type);
+        expect(sentTypes).not.toContain("call:offer");
+    });
+
+    it("handleOffer — call:end if already in a call", async () => {
         await webRTCService.startCall("peerX");
-        const offer: FromOffer = { from: "peerY", offer: { sdp: "x", type: "offer" } };
+        const offer: FromOffer = { from: "peerY", sdp: enc({ sdp: "x", type: "offer" }) };
         await expect(webRTCService.handleOffer(offer)).rejects.toThrow("Already in call");
         expect(sendWS).toHaveBeenCalledWith({ type: "call:end", to: "peerY" });
     });
 
-    it("handleOffer — успешно принимает offer", async () => {
-        const offer: FromOffer = { from: "peerY", offer: { sdp: "x", type: "offer" } };
+    it("handleOffer — decrypts the offer and sends an ENCRYPTED answer", async () => {
+        const offer: FromOffer = { from: "peerY", sdp: enc({ sdp: "x", type: "offer" }) };
         await webRTCService.handleOffer(offer);
 
         expect(sendWS).toHaveBeenCalledWith({
             type: "call:answer",
             to: "peerY",
-            answer: { sdp: "answer-sdp", type: "answer" },
+            sdp: enc({ sdp: "answer-sdp", type: "answer" }),
         });
     });
 
-    it("handleAnswer — ничего не делает если pc отсутствует", async () => {
-        const answer: FromAnswer = { from: "peerZ", answer: { sdp: "a", type: "answer" } };
+    it("handleOffer — fail-closed: an undecryptable offer is rejected, never setRemoteDescription'd", async () => {
+        decMock.mockRejectedValueOnce(new Error("bad ciphertext"));
+        const offer: FromOffer = { from: "peerY", sdp: "tampered" };
+        await webRTCService.handleOffer(offer);
+
+        const calls = (sendWS as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0] as OutgoingWebRTCMessage);
+        expect(calls).toContainEqual({ type: "call:end", to: "peerY" });
+        expect(calls.some((m) => m.type === "call:answer")).toBe(false);
+        // init() is never reached for a bad offer → no peer connection was opened.
+        expect((webRTCService as unknown as { pc: unknown }).pc).toBeNull();
+    });
+
+    it("handleAnswer — no-op if pc is absent", async () => {
+        const answer: FromAnswer = { from: "peerZ", sdp: enc({ sdp: "a", type: "answer" }) };
         await webRTCService.handleAnswer(answer);
         expect(sendWS).not.toHaveBeenCalled();
     });
 
-    it("handleAnswer — ничего не делает если signalingState !== 'have-local-offer'", async () => {
-        // Мокируем pc вручную
+    it("handleAnswer — no-op if signalingState !== 'have-local-offer'", async () => {
         const pcMock = new MockRTCPeerConnection();
         (webRTCService as unknown as { pc: MockRTCPeerConnection }).pc = pcMock;
-
-        // signalingState != 'have-local-offer'
         pcMock.signalingState = "stable";
 
-        const answer: FromAnswer = { from: "peerZ", answer: { sdp: "a", type: "answer" } };
+        const answer: FromAnswer = { from: "peerZ", sdp: enc({ sdp: "a", type: "answer" }) };
         await webRTCService.handleAnswer(answer);
 
         expect(sendWS).not.toHaveBeenCalled();
         expect(pcMock.setRemoteDescription).not.toHaveBeenCalled();
     });
 
-    it("handleAnswer — успешно устанавливает remoteDescription и ICE", async () => {
+    it("handleAnswer — decrypts and sets the remote description", async () => {
         await webRTCService.startCall("peer1");
         const pc = (webRTCService as unknown as { pc: MockRTCPeerConnection }).pc!;
         pc.signalingState = "have-local-offer";
 
-        const answer: FromAnswer = { from: "peerZ", answer: { sdp: "a", type: "answer" } };
+        const answer: FromAnswer = { from: "peerZ", sdp: enc({ sdp: "a", type: "answer" }) };
         await webRTCService.handleAnswer(answer);
 
-        expect(pc.setRemoteDescription).toHaveBeenCalledWith(answer.answer);
+        expect(pc.setRemoteDescription).toHaveBeenCalledWith({ sdp: "a", type: "answer" });
     });
 
-    it("addIce — добавляет в pendingIce если remoteReady = false", async () => {
+    it("addIce — queues into pendingIce while remoteReady = false", async () => {
         const candidate: FromCandidate = { from: "peer1", candidate: { candidate: "ice", sdpMid: "0", sdpMLineIndex: 0 } };
         await webRTCService.addIce(candidate);
 
@@ -154,7 +184,7 @@ describe("WebRTCService", () => {
         expect(service.pendingIce).toHaveLength(1);
     });
 
-    it("addIce — вызывает pc.addIceCandidate если remoteReady = true", async () => {
+    it("addIce — calls pc.addIceCandidate when remoteReady = true", async () => {
         await webRTCService.startCall("peer1");
         const pc = (webRTCService as unknown as { pc: MockRTCPeerConnection }).pc!;
         (webRTCService as unknown as { remoteReady: boolean }).remoteReady = true;
@@ -165,7 +195,7 @@ describe("WebRTCService", () => {
         expect(pc.addIceCandidate).toHaveBeenCalledWith(candidate.candidate);
     });
 
-    it("getConnectionState — возвращает состояние соединения", async () => {
+    it("getConnectionState — returns the connection state", async () => {
         expect(webRTCService.getConnectionState()).toBeNull();
 
         await webRTCService.startCall("peer1");

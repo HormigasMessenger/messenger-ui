@@ -11,6 +11,7 @@ export interface CallState {
     offer: RTCSessionDescriptionInit | null;
 }
 
-export type FromOffer = { from: string, offer: RTCSessionDescriptionInit, media?: CallMedia, conversationId?: string }
-export type FromAnswer = { from: string, answer: RTCSessionDescriptionInit }
+// `sdp` = the E2EE-encrypted SDP (ciphertext); decrypted in webRTCService right before setRemoteDescription.
+export type FromOffer = { from: string, sdp: string, media?: CallMedia, conversationId?: string }
+export type FromAnswer = { from: string, sdp: string }
 export type FromCandidate = { from: string, candidate: RTCIceCandidateInit }
