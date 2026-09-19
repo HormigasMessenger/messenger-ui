@@ -21,10 +21,22 @@ export interface ReportUndecryptable {
 /** Dispatched by chatMiddleware when a history secret message fails to decrypt (has a clientId to correlate). */
 export const reportUndecryptable = (payload: ReportUndecryptable["payload"]): ReportUndecryptable => ({type: REPORT_UNDECRYPTABLE, payload});
 
-const RETRY_MAX = 5;
 const RETRY_BASE_MS = 30_000;
 const RETRY_FACTOR = 1.5;
+const RETRY_CAP_MS = 5 * 60_000;                    // cap the backoff — keep retrying, but not faster than this
+const RECOVERY_WINDOW_MS = 48 * 60 * 60 * 1000;     // the sender can only help for 48h (its plaintext TTL); only THEN give up
 const TICK_MS = 15_000;
+
+// Serialize recovery work per peer: a request-response rides a SINGLE recovery session address per peer
+// (secretSession.recAddr), and two overlapping async handlers (e.g. a retry's response arriving mid-apply)
+// would race on that session's store state. Chain per peer so each apply/respond runs to completion first.
+const peerChains = new Map<string, Promise<unknown>>();
+function withPeerLock<T>(peer: string, fn: () => Promise<T>): Promise<T> {
+    const prev = peerChains.get(peer) ?? Promise.resolve();
+    const run = prev.then(fn, fn);
+    peerChains.set(peer, run.catch(() => {}));
+    return run;
+}
 
 export const e2eeRecoveryMiddleware: Middleware = (store) => {
     type S = {user?: {id?: string}; ws?: {status?: string}};
@@ -54,7 +66,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         }
     };
 
-    // Retry loop: re-request due items (backoff), give up + mark "lost" past RETRY_MAX.
+    // Retry loop: re-request due items (capped backoff); give up + mark "lost" only past the 48h window.
     let timer: ReturnType<typeof setInterval> | null = null;
     const startTimer = () => {
         if (timer) return;
@@ -64,16 +76,28 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         if (!wsConnected()) return;
         const now = Date.now();
         const pend = await allPending();
-        const exhausted = pend.filter((p) => p.attempts >= RETRY_MAX);
-        for (const p of exhausted) { patchRow(p.chatId, p.serverId, i18n.t(secretStateKey("lost"))); await removePending(p.clientId); }
-        const due = pend.filter((p) => p.attempts < RETRY_MAX && now - p.lastAt > RETRY_BASE_MS * Math.pow(RETRY_FACTOR, p.attempts));
+        // Give up ONLY once the sender can no longer help — past the 48h recovery window (its plaintext is
+        // gone by then anyway). Not after N quick retries: a sender offline for a few minutes is normal, and
+        // a late response would otherwise be dropped and the message wrongly shown "lost".
+        const expired = pend.filter((p) => now - p.createdAt > RECOVERY_WINDOW_MS);
+        for (const p of expired) { patchRow(p.chatId, p.serverId, i18n.t(secretStateKey("lost"))); await removePending(p.clientId); }
+        // Re-request due items with capped exponential backoff (so long-pending items still retry ~every 5 min).
+        const due = pend.filter((p) => now - p.createdAt <= RECOVERY_WINDOW_MS &&
+            now - p.lastAt > Math.min(RETRY_CAP_MS, RETRY_BASE_MS * Math.pow(RETRY_FACTOR, p.attempts)));
         if (due.length) await sendRequestsFor(due);
     };
 
+    let wasConnected = false;
     return (next) => (action) => {
         const result = next(action);
         const a = action as {type?: string; payload?: unknown};
         startTimer();
+
+        // On (re)connect, immediately re-request due items — a sender who was offline may now be reachable,
+        // so we don't wait out a backoff interval. (Our reconnect is the observable proxy for "peer online".)
+        const nowConnected = wsConnected();
+        if (nowConnected && !wasConnected) void tick();
+        wasConnected = nowConnected;
 
         // (1) chatMiddleware reports messages it couldn't decrypt → mark pending, request now.
         if (a?.type === REPORT_UNDECRYPTABLE) {
@@ -89,18 +113,18 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         if (a?.type === "ws/incoming") {
             const f = a.payload as {type?: string; from?: string; conversationId?: string; clientIds?: string[]; items?: RecoverResp["items"]; missing?: string[]};
             if (f?.type === RECOVER_REQ && f.from && f.conversationId && Array.isArray(f.clientIds)) {
-                void (async () => {
+                void withPeerLock(f.from, async () => {
                     try {
                         const resp = await buildResponse(f.from!, f.conversationId!, f.clientIds!);
                         // Send if we have ANYTHING to say — recovered items OR a NACK for what we can't provide.
                         // A silent no-op here is what leaves the requester waiting out the whole retry budget.
                         if (resp.items.length || resp.missing.length) store.dispatch({type: "ws/send", payload: resp satisfies RecoverResp});
                     } catch (e) { logger.warn("e2ee recovery: respond failed", e as Error); }
-                })();
+                });
                 return result;
             }
             if (f?.type === RECOVER_RESP && f.from && f.conversationId && Array.isArray(f.items)) {
-                void (async () => {
+                void withPeerLock(f.from, async () => {
                     try {
                         const recovered = await applyResponse(f.from!, f.conversationId!, f.items!);
                         const missing = Array.isArray(f.missing) ? f.missing : [];
@@ -135,7 +159,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
                         }
                         logger.info("e2ee recovery: applied", {recovered: done.size, lost, items: f.items!.length});
                     } catch (e) { logger.warn("e2ee recovery: apply failed", e as Error); }
-                })();
+                });
                 return result;
             }
         }

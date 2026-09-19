@@ -28,8 +28,10 @@ import {e2eeRecoveryMiddleware} from "../e2eeRecoveryMiddleware.ts";
 import {RECOVER_RESP} from "../protocol.ts";
 
 type Dispatched = {type: string; [k: string]: unknown};
+// Fresh timestamps: within the 48h recovery window and recently requested, so the reconnect-triggered
+// retry tick is a no-op and each test isolates the RECOVER_RESP handler.
 const pend = (over: Record<string, unknown> = {}) => ({
-    clientId: "c1", serverId: "s1", chatId: "chat", peerId: "bob", attempts: 1, lastAt: 0, createdAt: 0, ...over,
+    clientId: "c1", serverId: "s1", chatId: "chat", peerId: "bob", attempts: 1, lastAt: Date.now(), createdAt: Date.now(), ...over,
 });
 
 function harness() {
