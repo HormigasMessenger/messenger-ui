@@ -1,6 +1,6 @@
 import {ensureProvisioned} from "../lib/provisioning.ts";
 import {encryptRecovery, decryptRecovery, type RecoverCipher} from "../lib/secretSession.ts";
-import {loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "../lib/atRest.ts";
+import {loadPlaintextRecord, E2EE_PLAINTEXT_TTL_MS} from "../lib/atRest.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
 // The recovery protocol messages (ride the opaque SIGNAL channel, so `from`/`to`/`conversationId` are added
@@ -26,21 +26,31 @@ export function buildRequest(peerId: string, chatId: string, clientIds: string[]
 }
 
 /**
- * Responder (the ORIGINAL sender): for each requested id, look up OUR own stored plaintext (kept under the
- * client id at send) and re-encrypt it on a FRESH recovery session to the requester — a clean chain, no
- * gap, and each item AEAD-bound to (messageId, chatId). We only ever return what we ourselves sent and
- * still hold (≤ 48h), which authorizes the request by construction. Batch is capped (anti-oracle).
+ * Responder (the ORIGINAL sender): for each requested id, re-encrypt OUR own stored plaintext on a FRESH
+ * recovery session to the requester — a clean chain, no gap, each item AEAD-bound to (messageId, chatId).
+ *
+ * AUTHORIZATION (closes a plaintext oracle): we serve an item ONLY if we stored it as a message WE SENT
+ * (`to` set) AND it was addressed to THIS requester AND it belongs to THIS conversation. Without that,
+ * anyone who learns a server-visible clientId (the server sees it as client_message_id) could forge a
+ * request and pull the plaintext out of the sender — defeating E2EE against a malicious server. Anything
+ * we can't vouch for that way (unknown / received-not-sent / other recipient / other chat / expired > 48h)
+ * is NACK'd via `missing`. Batch is capped (anti-oracle). If re-encryption itself fails (e.g. the
+ * requester has no keys right now) we still return the NACKs, and the requester retries the rest.
  */
 export async function buildResponse(requesterId: string, chatId: string, clientIds: string[]): Promise<RecoverResp> {
     const {store} = await ensureProvisioned();
     const have: Array<{mid: string; text: string}> = [];
     const missing: string[] = [];
     for (const clientId of clientIds.slice(0, MAX_RECOVER_BATCH)) {
-        const plain = await loadPlaintext(clientId, E2EE_PLAINTEXT_TTL_MS);
-        if (plain != null) have.push({ mid: clientId, text: plain });
-        else missing.push(clientId);                                    // expired past 48h, or we never held it → NACK
+        const rec = await loadPlaintextRecord(clientId, E2EE_PLAINTEXT_TTL_MS);
+        if (rec && rec.to === requesterId && rec.chatId === chatId) have.push({ mid: clientId, text: rec.text });
+        else missing.push(clientId);                                    // not ours to give / expired → NACK
     }
-    const ciphers = have.length ? await encryptRecovery(store, requesterId, chatId, have) : [];
+    let ciphers: RecoverCipher[] = [];
+    if (have.length) {
+        try { ciphers = await encryptRecovery(store, requesterId, chatId, have); }
+        catch (e) { logger.warn("e2ee recovery: re-encrypt failed; NACKing the rest, requester will retry", e as Error); }
+    }
     logger.info("e2ee recovery: responding", {requesterId, chatId, recover: ciphers.length, missing: missing.length});
     return { type: RECOVER_RESP, to: requesterId, conversationId: chatId, items: ciphers, missing };
 }

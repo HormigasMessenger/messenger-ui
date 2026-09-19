@@ -19,7 +19,14 @@ const V = 2;                                // v2 adds chatId + the by-chat inde
 export const E2EE_PLAINTEXT_TTL_MS = 48 * 60 * 60 * 1000;
 const enc = new TextEncoder(), dec = new TextDecoder();
 
-interface Rec { chatId: string; savedAt: number; w: Wrapped }
+// `to` (the intended recipient) is set ONLY on the sender's own outgoing record. It authorizes
+// client-to-client recovery: the sender re-sends a plaintext only to the recipient it was addressed to,
+// never to whoever asks (a server-visible clientId must not become a plaintext oracle). Received records
+// leave it unset — they are never served for recovery.
+interface Rec { chatId: string; savedAt: number; w: Wrapped; to?: string }
+
+/** A stored plaintext with the metadata recovery needs to authorize a re-send. */
+export interface PlaintextRecord { text: string; chatId: string; to?: string }
 
 let dbp: Promise<IDBPDatabase> | null = null;
 function db(): Promise<IDBPDatabase> {
@@ -32,13 +39,30 @@ function db(): Promise<IDBPDatabase> {
     return dbp;
 }
 
-/** Stash a decrypted/sent secret message's plaintext under its id (wrapped), tagged with its chat. */
-export async function savePlaintext(id: string, chatId: string, text: string): Promise<void> {
+/** Stash a decrypted/sent secret message's plaintext under its id (wrapped), tagged with its chat. Pass
+ * `to` (the recipient's userId) ONLY for our own outgoing message, so recovery can re-send just to them. */
+export async function savePlaintext(id: string, chatId: string, text: string, to?: string): Promise<void> {
     try {
         if (!id) return;
-        const rec: Rec = {chatId, savedAt: Date.now(), w: await wrapBytes(enc.encode(text).buffer)};
+        const rec: Rec = {chatId, savedAt: Date.now(), w: await wrapBytes(enc.encode(text).buffer), ...(to ? {to} : {})};
         await (await db()).put(STORE, rec, id);
     } catch { /* best-effort */ }
+}
+
+/** Load a plaintext record with its recovery metadata (chatId + intended recipient), honouring the TTL.
+ * Returns null if absent/expired. Used by the recovery responder to authorize a re-send. */
+export async function loadPlaintextRecord(id: string, ttlMs?: number): Promise<PlaintextRecord | null> {
+    try {
+        const d = await db();
+        const rec = (await d.get(STORE, id)) as Rec | Wrapped | undefined;
+        if (!rec) return null;
+        const w = "w" in rec ? rec.w : rec;
+        const savedAt = "savedAt" in rec ? rec.savedAt : 0;
+        const chatId = "chatId" in rec ? rec.chatId : "";
+        const to = "to" in rec ? rec.to : undefined;
+        if (ttlMs && savedAt && Date.now() - savedAt > ttlMs) { await d.delete(STORE, id).catch(() => {}); return null; }
+        return {text: dec.decode(await unwrapBytes(w)), chatId, to};
+    } catch { return null; }
 }
 
 /**
