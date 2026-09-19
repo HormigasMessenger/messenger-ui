@@ -1,3 +1,7 @@
+// @vitest-environment node
+// Pure crypto + store, no DOM. Run in NODE (single JS realm): jsdom is a second realm, so an identity
+// key round-tripped through the wrapped store (unwrapBytes → node-WebCrypto ArrayBuffer) fails libsignal's
+// `instanceof ArrayBuffer` check on the SELF-HEAL republish. One realm matches the browser (single-realm).
 import "fake-indexeddb/auto";
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import {SignalStore} from "../signalStore";
@@ -29,7 +33,7 @@ describe("device key wrapping", () => {
 
 describe("ensureProvisioned", () => {
     it("first run: generates identity, publishes a bundle (publics only), persists privates", async () => {
-        const store = new SignalStore();
+        const store = new SignalStore("e2ee-first");   // isolated db per test — the file shares one fake-indexeddb
         const { deviceId, provisioned } = await ensureProvisioned(store);
         expect(provisioned).toBe(true);
         expect(deviceId).toBeTruthy();
@@ -54,7 +58,7 @@ describe("ensureProvisioned", () => {
     });
 
     it("second run (known device): self-counts but does NOT re-publish or change identity", async () => {
-        const store = new SignalStore();
+        const store = new SignalStore("e2ee-second");
         const first = await ensureProvisioned(store);
         fetchMock.mockClear();
         const second = await ensureProvisioned(store);
@@ -68,7 +72,7 @@ describe("ensureProvisioned", () => {
     });
 
     it("self-heal: local identity but the directory doesn't know the device → re-publishes", async () => {
-        const store = new SignalStore();
+        const store = new SignalStore("e2ee-heal");
         const first = await ensureProvisioned(store);
         // The directory 404s the self-count (device unknown, e.g. a prior publish
         // failed while it was unreachable) but accepts the re-publish.
@@ -88,7 +92,7 @@ describe("ensureProvisioned", () => {
 
 describe("maybeReplenish", () => {
     it("replenishes when the pool is at/below low-water, no-ops otherwise", async () => {
-        const store = new SignalStore();
+        const store = new SignalStore("e2ee-replenish");
         await ensureProvisioned(store);
         fetchMock.mockClear();
 
