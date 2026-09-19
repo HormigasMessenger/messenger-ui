@@ -4,13 +4,13 @@ export {SignalStore} from "./lib/signalStore.ts";
 export {clearDeviceKey} from "./lib/deviceKey.ts";
 export {selfCount} from "./lib/keyDirectory.ts";
 export {encryptForSend, decryptReceived, isSecretEnvelope} from "./lib/secretChat.ts";
+export {reconcilePeerIdentities} from "./lib/secretSession.ts";
 export {e2eeRecoveryMiddleware, reportUndecryptable} from "./recovery/e2eeRecoveryMiddleware.ts";
 export {savePlaintext, loadPlaintext, deletePlaintextForChat, plaintextChatIds, sweepExpired, E2EE_PLAINTEXT_TTL_MS} from "./lib/atRest.ts";
 export {computeSafetyNumber, formatSafetyNumber, markVerified, clearVerified, isVerified} from "./lib/safetyNumber.ts";
 export {cryptoStats, type CryptoStats} from "./lib/cryptoStats.ts";
 
-import {ensureProvisioned, maybeReplenish} from "./lib/provisioning.ts";
-import {selfCount} from "./lib/keyDirectory.ts";
+import {ensureProvisioned, maybeReplenish, republishCurrentDevice} from "./lib/provisioning.ts";
 import {sweepExpired, E2EE_PLAINTEXT_TTL_MS} from "./lib/atRest.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
@@ -36,11 +36,16 @@ export function provisionE2EEInBackground(): void {
     armPlaintextSweep();   // disappearing-messages GC (48h)
     void (async () => {
         try {
-            const {deviceId, provisioned} = await ensureProvisioned();
+            const {store, deviceId, provisioned} = await ensureProvisioned();
             if (!provisioned) {
-                // Already provisioned earlier — just replenish the OPK pool if the server says it's low.
-                try { const {oneTimePreKeysRemaining} = await selfCount(deviceId); await maybeReplenish(deviceId, oneTimePreKeysRemaining); }
-                catch { /* directory unreachable → try again next login */ }
+                // Already provisioned earlier. Re-assert THIS browser as the user's current device (the
+                // directory serves peers only the latest-published one — a second browser or an evicted-
+                // storage re-provision would otherwise be served as "current" and break the safety number),
+                // then top up the OPK pool if it's low.
+                try {
+                    const remaining = await republishCurrentDevice(store, deviceId);
+                    await maybeReplenish(deviceId, remaining, store);
+                } catch { /* directory unreachable → try again next login */ }
             }
         } catch (e) {
             logger.debug("e2ee background provisioning skipped (best-effort)", e as Error);

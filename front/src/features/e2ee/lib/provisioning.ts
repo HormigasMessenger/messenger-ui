@@ -9,15 +9,14 @@ import {logger} from "@/shared/logger/logger.ts";
 // deviceId); after that it only replenishes its one-time-prekey pool. The directory only ever sees public
 // keys; nothing here reveals a private key.
 
-const OPK_BATCH = 20;           // how many one-time prekeys to seed / replenish at a time
+const OPK_BATCH = 20;           // how many one-time prekeys to seed at first provision
+const OPK_TARGET = 20;          // top the pool UP TO this on replenish (never grow it unbounded)
 const OPK_LOW_WATER = 5;        // replenish when the server-side remaining count drops to/below this
 const SPK_ID = 1;
 
 function randomDeviceId(): string {
     try { return crypto.randomUUID(); } catch { return "dev-" + Date.now() + "-" + Math.random().toString(36).slice(2); }
 }
-
-let nextPreKeyId = 1;           // monotonic id source for OPKs across a session (persisted floor is the store)
 
 /**
  * Ensure this device has an identity in the directory. First run: generate identity + registrationId +
@@ -74,11 +73,36 @@ async function buildAndPublish(store: SignalStore, deviceId: string, identity: {
     logger.debug("e2ee: keys published", {deviceId, opks: opks.length});
 }
 
-/** Generate `count` one-time prekeys, persist their privates, return the PUBLIC halves for the directory. */
+/**
+ * Re-publish THIS device's identity so the directory treats it as the user's CURRENT device.
+ * The directory serves a peer only the most-recently-published device (v1 single-device). A user who
+ * has provisioned in more than one place — a second browser, or a storage-eviction re-provision — leaves
+ * other device rows behind; whichever was published LAST wins "current", even if it isn't the browser the
+ * user is actually in. A peer would then verify against that other device's identity and the safety number
+ * would never match. Touching on startup (bump identity updated_at + rotate the signed prekey; the OPK pool
+ * is left intact) makes the ACTIVE browser current. Best-effort. Returns the server's remaining-OPK count.
+ */
+export async function republishCurrentDevice(store: SignalStore, deviceId: string): Promise<number> {
+    const identity = await store.getIdentityKeyPair();
+    if (!identity) return 0;                        // not provisioned yet → nothing to assert
+    const signed = await KeyHelper.generateSignedPreKey(identity, SPK_ID);
+    await store.storeSignedPreKey(SPK_ID, signed.keyPair);
+    const {oneTimePreKeysRemaining} = await publishKeys({
+        deviceId,
+        identityKey: b64(identity.pubKey),
+        signedPreKey: {id: SPK_ID, publicKey: b64(signed.keyPair.pubKey), signature: b64(signed.signature)},
+        oneTimePreKeys: [],                         // touch only — never perturb the existing OPK pool
+    });
+    logger.debug("e2ee: re-asserted current device", {deviceId, remaining: oneTimePreKeysRemaining});
+    return oneTimePreKeysRemaining;
+}
+
+/** Generate `count` one-time prekeys under freshly-allocated, NEVER-reused ids (persisted floor in the
+ * store), persist their privates, and return the PUBLIC halves for the directory. */
 async function generateOPKs(store: SignalStore, count: number): Promise<PreKeyPub[]> {
+    const ids = await store.allocatePreKeyIds(count);
     const out: PreKeyPub[] = [];
-    for (let i = 0; i < count; i++) {
-        const id = nextPreKeyId++;
+    for (const id of ids) {
         const pk = await KeyHelper.generatePreKey(id);
         await store.storePreKey(id, pk.keyPair);
         out.push({ id, publicKey: b64(pk.keyPair.pubKey) });
@@ -92,8 +116,10 @@ async function generateOPKs(store: SignalStore, count: number): Promise<PreKeyPu
  */
 export async function maybeReplenish(deviceId: string, remaining: number, store = new SignalStore()): Promise<boolean> {
     if (remaining > OPK_LOW_WATER) return false;
-    const opks = await generateOPKs(store, OPK_BATCH);
+    const need = OPK_TARGET - remaining;          // top UP TO the target, don't just add a fixed batch
+    if (need <= 0) return false;
+    const opks = await generateOPKs(store, need);
     await replenishOneTime(deviceId, opks);
-    logger.debug("e2ee: OPK pool replenished", {deviceId, added: opks.length});
+    logger.debug("e2ee: OPK pool replenished", {deviceId, added: opks.length, target: OPK_TARGET});
     return true;
 }

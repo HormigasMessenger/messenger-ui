@@ -97,6 +97,21 @@ describe("maybeReplenish", () => {
 
         expect(await maybeReplenish("d", 3, store)).toBe(true);    // low → replenish
         expect(fetchMock.mock.calls[0][0]).toBe("/key-directory/v1/keys/one-time");
-        expect(await store.countPreKeys()).toBe(40);               // 20 initial + 20 new
+        expect(await store.countPreKeys()).toBe(37);               // 20 initial + top-up to target (20-3=17)
+    });
+
+    it("one-time-prekey ids are monotonic and never reused across store reloads (C1)", async () => {
+        const store = new SignalStore("e2ee-c1");
+        await ensureProvisioned(store);                            // seeds ids 1..20, floor persisted = 21
+        const first = new Set(Array.from({length: 20}, (_, i) => i + 1));
+
+        // Simulate a reload: a brand-new store instance over the SAME IndexedDB.
+        const reloaded = new SignalStore("e2ee-c1");
+        const ids = await reloaded.allocatePreKeyIds(20);
+        expect(Math.min(...ids)).toBeGreaterThan(20);              // continues past the persisted floor
+        expect(ids.some((id) => first.has(id))).toBe(false);       // no id from the first batch is reused
+        // And the floor keeps advancing, never handing the same id twice.
+        const more = await reloaded.allocatePreKeyIds(5);
+        expect(Math.min(...more)).toBeGreaterThan(Math.max(...ids));
     });
 });

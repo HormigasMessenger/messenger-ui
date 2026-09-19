@@ -91,6 +91,29 @@ export class SignalStore implements StorageType {
     async removePreKey(id: string | number): Promise<void> { await (await this.db()).delete(PREKEYS, String(id)); }
     async countPreKeys(): Promise<number> { return (await this.db()).count(PREKEYS); }
 
+    /**
+     * Allocate `count` fresh, strictly-increasing one-time-prekey ids and persist the new floor. Ids must
+     * NEVER be reused for the life of the device: the directory keeps a published id's public key (insert
+     * is ON CONFLICT DO NOTHING), so reissuing an id would leave the private we hold out of sync with the
+     * public a peer fetches, and a prekey message under it would fail to decrypt. Older builds kept the
+     * counter in a module variable that reset to 1 on every reload — this persists it. The floor is seeded
+     * beyond any id already stored, so existing installs don't collide the first time this code runs.
+     */
+    async allocatePreKeyIds(count: number): Promise<number[]> {
+        const d = await this.db();
+        let floor = (await d.get(META, "nextPreKeyId")) as number | undefined;
+        if (floor === undefined) {
+            const keys = (await d.getAllKeys(PREKEYS)) as string[];
+            let max = 0;
+            for (const k of keys) { const n = parseInt(k, 10); if (Number.isFinite(n) && n > max) max = n; }
+            floor = max + 1;
+        }
+        const ids: number[] = [];
+        for (let i = 0; i < count; i++) ids.push(floor + i);
+        await d.put(META, floor + count, "nextPreKeyId");
+        return ids;
+    }
+
     // --- signed prekeys ---
     async loadSignedPreKey(id: string | number): Promise<KeyPairType | undefined> {
         return unpackKeyPair((await (await this.db()).get(SIGNED, String(id))) as StoredKeyPair | undefined);
