@@ -16,7 +16,11 @@ services:
         # Baked into the JS bundle (temporary demo design — see front/.env.example).
         VITE_MESSENGER_BASE: ${VITE_MESSENGER_BASE:-/messenger}
         VITE_KRATOS_URL: ${VITE_KRATOS_URL:-/.ory/kratos/public}
-        VITE_MESSENGER_ADMIN_KEY: ${VITE_MESSENGER_ADMIN_KEY:-}
+        # The messenger backend gates POST /api/chats on HORMIGA_ADMIN_KEY, which the platform sets to
+        # ${IDS_ADMIN_KEY} — so the frontend must send that SAME single key. Fall back to IDS_ADMIN_KEY
+        # when VITE_MESSENGER_ADMIN_KEY isn't given explicitly, so a build against the platform .env bakes
+        # the correct key instead of an empty one (an empty key => "cannot create chats").
+        VITE_MESSENGER_ADMIN_KEY: ${VITE_MESSENGER_ADMIN_KEY:-${IDS_ADMIN_KEY:-}}
         VITE_TURN_HOST: ${VITE_TURN_HOST:-91.99.6.25}
         VITE_TURN_USER: ${VITE_TURN_USER:-user}
         VITE_TURN_PASS: ${VITE_TURN_PASS:-pass}
