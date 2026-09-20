@@ -47,4 +47,30 @@ describe("keyDirectory client", () => {
         await expect(fetchUserKeys("bob")).rejects.toBeInstanceOf(KeyDirectoryError);
         await expect(fetchUserKeys("bob")).rejects.toMatchObject({ status: 401 });
     });
+
+    it("retries a 429 (honoring Retry-After) then succeeds", async () => {
+        vi.useFakeTimers();
+        const rl = { ok: false, status: 429, headers: { get: () => "1" }, text: () => Promise.resolve("") };
+        fetchMock
+            .mockReturnValueOnce(Promise.resolve(rl))
+            .mockReturnValueOnce(okJson({ userId: "bob", devices: [] }));
+        const p = fetchUserKeys("bob");
+        await vi.advanceTimersByTimeAsync(1500);   // let the ~1s Retry-After backoff elapse
+        const out = await p;
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(out.userId).toBe("bob");
+        vi.useRealTimers();
+    });
+
+    it("gives up after the retry budget on sustained 429", async () => {
+        vi.useFakeTimers();
+        fetchMock.mockReturnValue(Promise.resolve({ ok: false, status: 429, headers: { get: () => "1" }, text: () => Promise.resolve("") }));
+        const p = fetchUserKeys("bob").catch((e) => e);
+        await vi.advanceTimersByTimeAsync(10_000);
+        const err = await p;
+        expect(err).toBeInstanceOf(KeyDirectoryError);
+        expect(err).toMatchObject({ status: 429 });
+        expect(fetchMock).toHaveBeenCalledTimes(4);   // initial + 3 retries
+        vi.useRealTimers();
+    });
 });
