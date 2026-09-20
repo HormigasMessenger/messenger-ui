@@ -6,6 +6,7 @@ import type {
     OutgoingWebRTCMessage
 } from "@/features/call/model/types.ts";
 import {logger} from "@/shared/logger/logger.ts";
+import {encryptForSend, decryptReceived} from "@/features/e2ee";
 import toast from "react-hot-toast";
 import i18n from "@/shared/i18n";
 
@@ -86,6 +87,19 @@ export class WebRTCService {
         );
 
         this.cleanup();
+    }
+
+    /* ======================
+       E2EE signaling failure (fail-closed): the SDP could not be end-to-end wrapped — usually the peer
+       has published no keys. We NEVER fall back to a plaintext SDP (that would let the server force a
+       downgrade + MITM), so the call is torn down and the user is told why.
+    ====================== */
+    private e2eeFail(err: unknown) {
+        const peerless = err instanceof Error && err.message === "NO_PEER_KEYS";
+        logger.warn("call: E2EE signaling failed — ending (no plaintext fallback)", err as Error);
+        toast.error(i18n.t(peerless ? "chat.peerNoKeys" : "chat.encryptFailed"));
+        this.cleanup();
+        this.onEnded?.();
     }
 
     /* ======================
@@ -184,10 +198,14 @@ export class WebRTCService {
         const offer = await (this.pc as RTCPeerConnection).createOffer();
         await (this.pc as RTCPeerConnection).setLocalDescription(offer);
 
+        let sdp: string;
+        try { sdp = await encryptForSend(peerId, JSON.stringify(offer)); }   // E2EE-authenticate the SDP/fingerprint
+        catch (err) { this.e2eeFail(err); throw err; }
+
         this.send({
             type: "call:offer",
             to: peerId,
-            offer,
+            sdp,
             media: audioOnly ? "audio" : "video",
             callId: this.callId ?? undefined,
         });
@@ -205,10 +223,13 @@ export class WebRTCService {
         if (!this.pc || !this.remotePeerId) return false;
         const offer = await this.pc.createOffer({iceRestart: true});
         await this.pc.setLocalDescription(offer);
+        let sdp: string;
+        try { sdp = await encryptForSend(this.remotePeerId, JSON.stringify(offer)); }
+        catch (err) { this.e2eeFail(err); return false; }
         this.send({
             type: "call:offer",
             to: this.remotePeerId,
-            offer,
+            sdp,
             media: this.audioOnly ? "audio" : "video",
             callId: this.callId ?? undefined,
         });
@@ -225,7 +246,7 @@ export class WebRTCService {
     /* ======================
        Handle offer (callee)
     ====================== */
-    public async handleOffer({from, offer, media}: FromOffer) {
+    public async handleOffer({from, sdp, media}: FromOffer) {
         if (this.pc) {
             this.send({type: "call:end", to: from});
             throw new Error("Already in call");
@@ -236,6 +257,19 @@ export class WebRTCService {
         logger.debug(this.audioOnly ? "audio call accepting offer" : "video call accepting offer");
 
         this.remotePeerId = from;
+
+        // Decrypt the E2EE-wrapped SDP FIRST. Fail closed: a tampered/forged/undecryptable offer is
+        // rejected outright — we never feed an unauthenticated SDP to setRemoteDescription (that's exactly
+        // what a MITM would need). No camera/mic is opened for a bad offer either.
+        let offer: RTCSessionDescriptionInit;
+        try {
+            offer = JSON.parse(await decryptReceived(from, sdp)) as RTCSessionDescriptionInit;
+        } catch (err) {
+            logger.warn("call: undecryptable offer — rejecting", err as Error);
+            this.send({type: "call:end", to: from});
+            this.cleanup();
+            return;
+        }
 
         // Symmetric with startCall: if getUserMedia is denied or negotiation throws, tell the
         // caller, release everything and rethrow — otherwise a half-open pc + live camera track
@@ -256,10 +290,11 @@ export class WebRTCService {
             const answer = await (this.pc as RTCPeerConnection).createAnswer();
             await (this.pc as RTCPeerConnection).setLocalDescription(answer);
 
+            const sdpA = await encryptForSend(from, JSON.stringify(answer));   // E2EE-authenticate our answer SDP
             this.send({
                 type: "call:answer",
                 to: from,
-                answer,
+                sdp: sdpA,
             });
         } catch (err) {
             this.send({type: "call:end", to: from});
@@ -271,11 +306,21 @@ export class WebRTCService {
     /* ======================
        Handle answer
     ====================== */
-    public async handleAnswer({from, answer}: FromAnswer) {
+    public async handleAnswer({from, sdp}: FromAnswer) {
         if (!this.pc) return;
         if (this.pc.signalingState !== "have-local-offer") return;
 
         logger.debug("video call handling answer");
+
+        // Decrypt the E2EE-wrapped answer; a tampered/undecryptable one ends the call (never applied raw).
+        let answer: RTCSessionDescriptionInit;
+        try {
+            answer = JSON.parse(await decryptReceived(from, sdp)) as RTCSessionDescriptionInit;
+        } catch (err) {
+            logger.warn("call: undecryptable answer — ending", err as Error);
+            this.hangUp();
+            return;
+        }
 
         this.remotePeerId = from;
         await this.pc.setRemoteDescription(answer);

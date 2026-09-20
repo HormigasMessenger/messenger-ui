@@ -13,16 +13,19 @@ export type CallMedia = "audio" | "video";
 // `callId` = one id per call attempt (caller-minted). It rides inside the opaque signaling body, so the
 // backend relay never sees it. `call:ready` = "I opened from the call push, (re)send me the offer" — the
 // callee sends it so the still-ringing caller re-offers and the callee gets a real INCOMING dialog.
+// `sdp` = the SDP offer/answer ENCRYPTED end-to-end in the peers' Signal session (see webRTCService /
+// e2ee secretChat). The relay only ever sees ciphertext, so it can't read or tamper with the DTLS
+// `a=fingerprint` and can't MITM the media handshake. Never put a plaintext SDP on the wire.
 export type IncomingWebRTCMessage =
-    | WSMessage & { type: "call:offer"; from: string; offer: RTCSessionDescriptionInit; media?: CallMedia; callId?: string; conversationId?: string }
-    | WSMessage & { type: "call:answer"; from: string; answer: RTCSessionDescriptionInit }
+    | WSMessage & { type: "call:offer"; from: string; sdp: string; media?: CallMedia; callId?: string; conversationId?: string }
+    | WSMessage & { type: "call:answer"; from: string; sdp: string }
     | WSMessage & { type: "call:ice"; from: string; candidate: RTCIceCandidateInit }
     | WSMessage & { type: "call:ready"; from: string; callId?: string }
     | WSMessage & { type: "call:end"; from: string };
 
 export type OutgoingWebRTCMessage =
-    | { type: "call:offer"; to: string; offer: RTCSessionDescriptionInit; media?: CallMedia; callId?: string }
-    | { type: "call:answer"; to: string; answer: RTCSessionDescriptionInit }
+    | { type: "call:offer"; to: string; sdp: string; media?: CallMedia; callId?: string }
+    | { type: "call:answer"; to: string; sdp: string }
     | { type: "call:ice"; to: string; candidate: RTCIceCandidateInit }
     | { type: "call:ready"; to: string; callId?: string }
     | { type: "call:end"; to: string };

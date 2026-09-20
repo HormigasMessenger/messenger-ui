@@ -12,6 +12,10 @@ vi.mock("@/features/directory", () => ({
     useGetIdsUserQuery: () => ({data: undefined}),
     idsDisplayName: (u: {id?: string}) => u?.id ?? "",
 }));
+vi.mock("@/features/e2ee", () => ({
+    computeSafetyNumber: vi.fn(async () => null),
+    isVerified: vi.fn(() => false),
+}));
 vi.mock("@/shared/ui/ConfirmModal.jsx", () => ({
     default: ({confirmText, cancelText, onConfirm, onCancel}: {confirmText: string; cancelText: string; onConfirm: () => void; onCancel: () => void}) => (
         <div data-testid="incoming-dialog">

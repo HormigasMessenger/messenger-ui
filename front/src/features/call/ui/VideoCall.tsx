@@ -1,9 +1,10 @@
-import {useEffect, useRef} from "react";
+import {useEffect, useRef, useState} from "react";
 import {useSelector} from "react-redux";
 import {useTranslation} from "react-i18next";
 import {skipToken} from "@reduxjs/toolkit/query/react";
 import type {RootState} from "@/store/store.ts";
 import {idsDisplayName, useGetIdsUserQuery} from "@/features/directory";
+import {computeSafetyNumber, isVerified} from "@/features/e2ee";
 import ConfirmModal from "@/shared/ui/ConfirmModal.jsx";
 
 interface VideoCallProps {
@@ -48,6 +49,23 @@ export default function VideoCall({
 
     const callFrom = useSelector((state: RootState) => state.call.peerId);
     const callStatus = useSelector((state: RootState) => state.call.status);
+    const myId = useSelector((state: RootState) => state.user?.id);
+
+    // Every call is now E2EE-authenticated (the SDP rides the Signal session). Additionally reflect the
+    // OUT-OF-BAND identity check: "verified" iff the peer's safety number is the one the user confirmed.
+    const [peerVerified, setPeerVerified] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        if (!callFrom || !myId) { setPeerVerified(false); return; }
+        void computeSafetyNumber(myId, callFrom).then((n) => { if (alive) setPeerVerified(isVerified(callFrom, n)); });
+        return () => { alive = false; };
+    }, [callFrom, myId]);
+    const e2eeBadge = (
+        <div className="text-xs text-teal-300/90">
+            🔒 {t("call.encrypted", {defaultValue: "End-to-end encrypted"})}
+            {peerVerified && <span className="ml-1 text-green-400">· ✓ {t("call.verified", {defaultValue: "verified"})}</span>}
+        </div>
+    );
 
     // Resolve the caller's display name by id (peerId is a user id) — no full-directory download.
     const {data: caller} = useGetIdsUserQuery(callFrom ?? skipToken);
@@ -89,6 +107,7 @@ export default function VideoCall({
                 </div>
                 <div className="mt-5 text-2xl font-medium">{callerName}</div>
                 <div className="mt-1 text-sm text-teal-300">🎙 {statusLine ?? t("call.audioCall")}</div>
+                <div className="mt-1">{e2eeBadge}</div>
                 {/* Remote audio (no video track in a voice call) */}
                 <audio autoPlay playsInline ref={remoteAudioRef} className="hidden"/>
                 <button
@@ -103,6 +122,7 @@ export default function VideoCall({
 
     return (
         <div className="fixed inset-0 bg-black z-50 flex">
+            <div className="absolute top-2 inset-x-0 text-center z-10">{e2eeBadge}</div>
             {statusLine && (
                 <div className="absolute top-8 inset-x-0 text-center text-white text-lg z-10">
                     {statusLine}

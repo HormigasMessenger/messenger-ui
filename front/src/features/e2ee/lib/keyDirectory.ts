@@ -31,16 +31,30 @@ class KeyDirectoryError extends Error {
     constructor(status: number, msg: string) { super(msg); this.name = "KeyDirectoryError"; this.status = status; }
 }
 
+const RL_MAX_RETRIES = 3;                                     // KEY_FETCH is per-caller rate-limited server-side
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-    const res = await fetch(BASE + path, {
-        ...init,
-        credentials: "include",                                  // Kratos session cookie
-        headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-    });
-    if (!res.ok) throw new KeyDirectoryError(res.status, `${init?.method ?? "GET"} ${path} → ${res.status}`);
-    // 204/empty bodies (publish/replenish may return a small JSON; tolerate empty).
-    const text = await res.text();
-    return (text ? JSON.parse(text) : undefined) as T;
+    for (let attempt = 0; ; attempt++) {
+        const res = await fetch(BASE + path, {
+            ...init,
+            credentials: "include",                              // Kratos session cookie
+            headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+        });
+        // 429 Too Many Requests (fetch rate limit): back off and retry a bounded number of times, honoring
+        // Retry-After, so a transient burst doesn't surface as a failed session/call instead of a brief wait.
+        if (res.status === 429 && attempt < RL_MAX_RETRIES) {
+            const ra = Number(res.headers.get("Retry-After"));
+            const waitMs = (Number.isFinite(ra) && ra > 0 ? ra * 1000 : Math.min(1000 * 2 ** attempt, 8000)) + Math.random() * 250;
+            await res.text().catch(() => {});                   // drain the body before retrying
+            await sleep(waitMs);
+            continue;
+        }
+        if (!res.ok) throw new KeyDirectoryError(res.status, `${init?.method ?? "GET"} ${path} → ${res.status}`);
+        // 204/empty bodies (publish/replenish may return a small JSON; tolerate empty).
+        const text = await res.text();
+        return (text ? JSON.parse(text) : undefined) as T;
+    }
 }
 
 /** Publish/replace this device's identity + signed prekey and seed its one-time-prekey pool. */

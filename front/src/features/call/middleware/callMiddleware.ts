@@ -39,7 +39,7 @@ export const createCallMiddleware = (webRTCService: WebRTCService): Middleware =
                 switch (msg.type) {
                     case "call:offer": {
                         const cs = (getState() as RootState).call;
-                        const offer = {from: msg.from, offer: msg.offer, media: msg.media, conversationId: msg.conversationId};
+                        const offer = {from: msg.from, sdp: msg.sdp, media: msg.media, conversationId: msg.conversationId};
 
                         // Already engaged with THIS peer → NEVER decline them. A call:end here would kill
                         // the very call we're answering. A caller re-offers (call:ready re-offer, ICE
