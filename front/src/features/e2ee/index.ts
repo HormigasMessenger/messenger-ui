@@ -2,7 +2,7 @@
 export {ensureProvisioned, maybeReplenish} from "./lib/provisioning.ts";
 export {SignalStore} from "./lib/signalStore.ts";
 export {clearDeviceKey} from "./lib/deviceKey.ts";
-export {selfCount} from "./lib/keyDirectory.ts";
+export {selfCount, fetchTurnCredentials, type TurnCreds} from "./lib/keyDirectory.ts";
 export {encryptForSend, decryptReceived, isSecretEnvelope} from "./lib/secretChat.ts";
 export {reconcilePeerIdentities} from "./lib/secretSession.ts";
 export {e2eeRecoveryMiddleware, reportUndecryptable} from "./recovery/e2eeRecoveryMiddleware.ts";

@@ -94,4 +94,10 @@ export function fetchDeviceKeys(userId: string, deviceId: string): Promise<{ use
     return req(`/keys/${encodeURIComponent(userId)}/${encodeURIComponent(deviceId)}`);
 }
 
+/** Short-lived TURN credentials (coturn use-auth-secret). Fetched before a call; no static creds in the bundle. */
+export interface TurnCreds { username: string; credential: string; ttl: number; uris: string[] }
+export function fetchTurnCredentials(): Promise<TurnCreds> {
+    return req<TurnCreds>("/turn/credentials");
+}
+
 export { KeyDirectoryError };

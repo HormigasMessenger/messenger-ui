@@ -22,8 +22,7 @@ services:
         # the correct key instead of an empty one (an empty key => "cannot create chats").
         VITE_MESSENGER_ADMIN_KEY: ${VITE_MESSENGER_ADMIN_KEY:-${IDS_ADMIN_KEY:-}}
         VITE_TURN_HOST: ${VITE_TURN_HOST:-91.99.6.25}
-        VITE_TURN_USER: ${VITE_TURN_USER:-user}
-        VITE_TURN_PASS: ${VITE_TURN_PASS:-pass}
+        # TURN username/password are no longer baked — short-lived TURN creds are fetched at call time.
     image: front4mess:latest
     container_name: front4mess
     ports:

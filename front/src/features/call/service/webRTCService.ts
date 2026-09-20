@@ -1,4 +1,4 @@
-import {ICE_SERVERS} from "@/shared/config/webrtc";
+import {getIceConfig} from "./iceConfig.ts";
 import type {
     FromAnswer,
     FromCandidate,
@@ -141,7 +141,7 @@ export class WebRTCService {
             audio: true,
         });
 
-        const pc = new RTCPeerConnection(ICE_SERVERS);
+        const pc = new RTCPeerConnection(await getIceConfig());   // STUN + short-lived TURN creds (no static creds)
         this.pc = pc;
         this.localStream = stream;
         this.onLocalStreamChange?.(stream);

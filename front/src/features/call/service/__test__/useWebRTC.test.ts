@@ -17,6 +17,7 @@ vi.mock("react-hot-toast", () => ({
 vi.mock("@/features/e2ee", () => ({
     encryptForSend: vi.fn(async (_peer: string, text: string) => "ENC:" + text),
     decryptReceived: vi.fn(async (_from: string, body: string) => body.replace(/^ENC:/, "")),
+    fetchTurnCredentials: vi.fn(async () => ({username: "u", credential: "c", ttl: 600, uris: ["turn:x:3478?transport=udp"]})),
 }));
 import { encryptForSend, decryptReceived } from "@/features/e2ee";
 const encMock = vi.mocked(encryptForSend);

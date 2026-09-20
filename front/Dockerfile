@@ -26,8 +26,8 @@ ARG VITE_MESSENGER_BASE=/messenger
 ARG VITE_KRATOS_URL=/.ory/kratos/public
 ARG VITE_MESSENGER_ADMIN_KEY=
 ARG VITE_TURN_HOST=91.99.6.25
-ARG VITE_TURN_USER=user
-ARG VITE_TURN_PASS=pass
+# TURN username/password are NO LONGER baked — the client fetches short-lived TURN creds at call time
+# (coturn use-auth-secret via /key-directory/v1/turn/credentials). Only the STUN host is needed here.
 # Write .env.production so Vite reliably picks the values up (it loads .env* files
 # for `vite build`; reading them from the process env is not guaranteed).
 RUN { \
@@ -35,8 +35,6 @@ RUN { \
       echo "VITE_KRATOS_URL=$VITE_KRATOS_URL"; \
       echo "VITE_MESSENGER_ADMIN_KEY=$VITE_MESSENGER_ADMIN_KEY"; \
       echo "VITE_TURN_HOST=$VITE_TURN_HOST"; \
-      echo "VITE_TURN_USER=$VITE_TURN_USER"; \
-      echo "VITE_TURN_PASS=$VITE_TURN_PASS"; \
     } > .env.production
 RUN npx vite build --base="$BASE"
 
