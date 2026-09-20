@@ -14,6 +14,10 @@ function uuid(): string {
     try { return crypto.randomUUID(); } catch { return "call-" + Date.now() + "-" + Math.random().toString(36).slice(2); }
 }
 
+// Cap the pre-offer ICE buffer so a flood of candidates before the offer arrives can't grow unbounded.
+// A real call never queues anywhere near this many; past the cap we drop the oldest.
+const MAX_PENDING_ICE = 100;
+
 export class WebRTCService {
     /* ======================
        Private properties
@@ -341,6 +345,7 @@ export class WebRTCService {
         this.remotePeerId ??= from;
 
         if (!this.pc || !this.remoteReady) {
+            if (this.pendingIce.length >= MAX_PENDING_ICE) this.pendingIce.shift();   // bounded buffer
             this.pendingIce.push(candidate);
             return;
         }

@@ -13,7 +13,8 @@ export const CALL_TIMEOUT_MS = 60_000;
 
 export const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
+        // Our OWN STUN only — Google's public STUN would hand a third party (Google) the caller's IP and
+        // the time of every call, and our coturn already provides STUN on the same host.
         { urls: `stun:${TURN_HOST}:3478` },
         {
             urls: [
