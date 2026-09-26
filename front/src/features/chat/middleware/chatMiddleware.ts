@@ -16,6 +16,7 @@ import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.
 import {savePlaintext, loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "@/features/e2ee/lib/atRest.ts";
 import {reportUndecryptable} from "@/features/e2ee";
 import {classifyDecryptError, isRecoverable, secretStateKey} from "@/features/e2ee/lib/failure.ts";
+import {ulidTimeMs, isUlid} from "@/shared/ulid/ulid.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
@@ -49,8 +50,12 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                 let peerId = "";
                 for (const m of secret) {
                     let plain = (await loadPlaintext(m.id, E2EE_PLAINTEXT_TTL_MS)) ?? (m.clientId ? await loadPlaintext(m.clientId, E2EE_PLAINTEXT_TTL_MS) : null);
+                    // "Aged out": older than the retention window → the plaintext (ours and the sender's) is
+                    // swept by design. This is a disappearing message, NOT a decrypt failure — don't attempt
+                    // recovery (the sender's copy is gone too), and show "expired", not "lost".
+                    const aged = plain == null && isUlid(m.id) && Date.now() - ulidTimeMs(m.id) > E2EE_PLAINTEXT_TTL_MS;
                     let recoverable = false;
-                    if (plain == null && m.from && m.from !== myId) {
+                    if (plain == null && !aged && m.from && m.from !== myId) {
                         // Never decrypted live → try the ratchet now (in-order over history).
                         try { plain = await decryptReceived(m.from, m.text); void savePlaintext(m.id, chatId, plain); }
                         catch {
@@ -59,7 +64,13 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                             if (m.clientId) { toRecover.push({clientId: m.clientId, serverId: m.id}); peerId = m.from; recoverable = true; }
                         }
                     }
-                    const fallback = i18n.t(secretStateKey(recoverable ? "pending" : "lost"));
+                    // "lost" ONLY when we actually tried and failed within the window. Own messages we can't
+                    // re-derive from history (the envelope is encrypted to the peer) → "unavailable".
+                    const state = aged ? "expired"
+                        : recoverable ? "pending"
+                        : m.from === myId ? "unavailable"
+                        : "lost";
+                    const fallback = i18n.t(secretStateKey(state));
                     d(chatApi.util.updateQueryData("getChatHistory", {myId, chatId}, (draft) => {
                         const row = draft?.find((r) => r.id === m.id);
                         if (row) { row.text = plain ?? fallback; row.secret = true; }

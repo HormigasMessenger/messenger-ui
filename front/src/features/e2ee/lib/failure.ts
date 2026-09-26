@@ -35,12 +35,14 @@ export function isRecoverable(f: DecryptFailure): boolean {
 export type SecretMsgState =
     | "decrypting"    // transient: live decrypt in flight
     | "pending"       // couldn't decrypt yet; re-requested from the sender, will retry (⏳)
-    | "lost"          // recovery exhausted its budget, or the 48h at-rest window passed (🔒 Lost)
+    | "expired"       // aged out of the local retention window (disappearing messages) — NOT a failure (🕗)
+    | "lost"          // every attempt to decrypt/recover failed within the window (🔒 Lost)
     | "unavailable";  // we hold no plaintext and can't recover it (e.g. own message we can't ratchet) (🔒)
 
 const STATE_KEY: Record<SecretMsgState, string> = {
     decrypting: "chat.decrypting",
     pending: "chat.decryptPending",
+    expired: "chat.decryptExpired",
     lost: "chat.decryptLost",
     unavailable: "chat.decryptUnavailable",
 };

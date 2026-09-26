@@ -105,6 +105,7 @@
     "secretDisableTitle": "Desactivar chat secreto",
     "peerNoKeys": "Este contacto aún no activó el chat secreto — pídele que abra la app y vuelve a intentar",
     "decryptLost": "🔒 Perdido",
+    "decryptExpired": "🕗 Caducado (más de 7 días)",
     "decryptPending": "⏳ No llegó — re-solicitado",
     "safetyTitle": "Número de seguridad",
     "safetyDesc": "Compara este número con {{name}} en persona o en una llamada. Si coincide, nadie intercepta tu chat.",

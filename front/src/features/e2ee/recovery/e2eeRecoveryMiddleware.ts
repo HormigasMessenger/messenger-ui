@@ -24,7 +24,7 @@ export const reportUndecryptable = (payload: ReportUndecryptable["payload"]): Re
 const RETRY_BASE_MS = 30_000;
 const RETRY_FACTOR = 1.5;
 const RETRY_CAP_MS = 5 * 60_000;                    // cap the backoff — keep retrying, but not faster than this
-const RECOVERY_WINDOW_MS = 48 * 60 * 60 * 1000;     // the sender can only help for 48h (its plaintext TTL); only THEN give up
+const RECOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // the sender can only help while its plaintext lives (retention TTL); only THEN give up
 const TICK_MS = 15_000;
 
 // Serialize recovery work per peer: a request-response rides a SINGLE recovery session address per peer
@@ -80,7 +80,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         // gone by then anyway). Not after N quick retries: a sender offline for a few minutes is normal, and
         // a late response would otherwise be dropped and the message wrongly shown "lost".
         const expired = pend.filter((p) => now - p.createdAt > RECOVERY_WINDOW_MS);
-        for (const p of expired) { patchRow(p.chatId, p.serverId, i18n.t(secretStateKey("lost"))); await removePending(p.clientId); }
+        for (const p of expired) { patchRow(p.chatId, p.serverId, i18n.t(secretStateKey("expired"))); await removePending(p.clientId); }  // aged out, not a failure
         // Re-request due items with capped exponential backoff (so long-pending items still retry ~every 5 min).
         const due = pend.filter((p) => now - p.createdAt <= RECOVERY_WINDOW_MS &&
             now - p.lastAt > Math.min(RETRY_CAP_MS, RETRY_BASE_MS * Math.pow(RETRY_FACTOR, p.attempts)));

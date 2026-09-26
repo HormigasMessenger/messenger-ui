@@ -105,6 +105,7 @@
     "secretDisableTitle": "Turn off secret chat",
     "peerNoKeys": "This contact hasn't enabled secret chat yet — ask them to open the app, then try again",
     "decryptLost": "🔒 Lost",
+    "decryptExpired": "🕗 Expired (older than 7 days)",
     "decryptPending": "⏳ Didn't arrive — re-requested",
     "safetyTitle": "Safety number",
     "safetyDesc": "Compare this number with {{name}} in person or on a call. If it matches, no one is intercepting your chat.",

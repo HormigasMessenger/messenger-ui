@@ -14,9 +14,9 @@ const STORE = "pt";
 const V = 2;                                // v2 adds chatId + the by-chat index
 
 // Disappearing secret messages: a stored decrypted plaintext is auto-deleted this long after it was saved.
-// After that the message reads "🔒 unavailable" (the ratchet key is long gone, so it's unrecoverable — by
-// design). 48h, global.
-export const E2EE_PLAINTEXT_TTL_MS = 48 * 60 * 60 * 1000;
+// After that the message reads "🕗 expired" (aged out — the ratchet key is long gone, so it's unrecoverable
+// by design; this is NOT a decrypt failure). 7 days, global.
+export const E2EE_PLAINTEXT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const enc = new TextEncoder(), dec = new TextDecoder();
 
 // `to` (the intended recipient) is set ONLY on the sender's own outgoing record. It authorizes
