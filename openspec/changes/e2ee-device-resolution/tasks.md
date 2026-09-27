@@ -58,11 +58,13 @@
       last-resort key exists, serve it WITHOUT consuming; response
       `oneTimePreKeyIsLastResort: true`. Postgres + Memory + interface parity.
 - [ ] 8.4 (key-directory) tests: pool→consume; empty+LRK→serve-not-consume; empty+no-LRK→null.
-- [ ] 8.5 (messenger-ui) `provisioning.ts`: generate + publish last-resort prekey at
-      provision; rotate on `republishCurrentDevice`; store private half.
-- [ ] 8.6 (messenger-ui) `keyDirectory.ts` DTOs: `lastResortPreKey` on publish,
+- [x] 8.5 (messenger-ui) `provisioning.ts`: generate + publish a STABLE last-resort prekey
+      at provision (reserved id); backfill/re-assert on `republishCurrentDevice`; store
+      private in META; `signalStore` no-ops removePreKey for the reserved id (reusable).
+- [x] 8.6 (messenger-ui) `keyDirectory.ts` DTOs: `lastResortPreKey` on publish,
       `oneTimePreKeyIsLastResort` on fetch (X3DH treats it as an ordinary OPK).
-- [ ] 8.7 (messenger-ui) tests: session establishes against an exhausted peer via LRK.
+- [ ] 8.7 (messenger-ui) tests: session establishes against an exhausted peer via LRK;
+      LRK reusable across two peers; reserved id absent from allocated OPK ids.
 
 ## 9. Replenish-on-demand
 - [ ] 9.1 (messenger-ui) trigger `maybeReplenish` whenever a self-directory response

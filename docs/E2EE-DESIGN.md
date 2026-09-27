@@ -46,7 +46,7 @@ SPK signature) are published to the directory.
 | **IK** — Identity Key | `KeyHelper.generateIdentityKeyPair()` | once; **never rotated** | stable device identity; anchors the safety number |
 | **SPK** — Signed PreKey | `KeyHelper.generateSignedPreKey(IK, id=1)` | rotated on every startup republish | medium-term prekey, **signed by IK** |
 | **OPK** — One-Time PreKeys | `KeyHelper.generatePreKey(id)` ×N | **single-use**, pool of 20, replenished | per-handshake one-time prekey |
-| **LRK** — Last-Resort PreKey | `KeyHelper.generatePreKey(id)` | reusable; rotated on startup | served when the OPK pool is empty (§6) |
+| **LRK** — Last-Resort PreKey | `KeyHelper.generatePreKey(reservedId)` | reusable; **stable** (not rotated) | served when the OPK pool is empty (§6) |
 
 - **SPK signature** = `Sign(IK_priv, SPK_pub)` (XEdDSA over Curve25519 — see
   [XEdDSA spec](https://signal.org/docs/specifications/xeddsa/)). A fetcher verifies it with the

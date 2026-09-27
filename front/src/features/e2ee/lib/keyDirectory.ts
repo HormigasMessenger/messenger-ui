@@ -14,13 +14,15 @@ export interface PublishBody {
     identityKey: string;                 // base64 public identity key
     signedPreKey: SignedPreKeyPub;
     oneTimePreKeys: PreKeyPub[];
+    lastResortPreKey?: PreKeyPub;        // reusable prekey served when the normal pool is exhausted
 }
 
 export interface DeviceBundle {
     deviceId: string;
     identityKey: string;
     signedPreKey: SignedPreKeyPub;
-    oneTimePreKey: PreKeyPub | null;     // null when the peer's OPK pool is exhausted (X3DH → SPK-only)
+    oneTimePreKey: PreKeyPub | null;     // null only when the pool is exhausted AND no last-resort key
+    oneTimePreKeyIsLastResort?: boolean; // true → oneTimePreKey is the reusable last-resort key
     oneTimePreKeysRemaining: number;
 }
 export interface FetchResponse { userId: string; devices: DeviceBundle[] }

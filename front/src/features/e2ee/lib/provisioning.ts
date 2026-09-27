@@ -1,5 +1,5 @@
 import {KeyHelper} from "@privacyresearch/libsignal-protocol-typescript";
-import {SignalStore} from "./signalStore.ts";
+import {SignalStore, LAST_RESORT_PREKEY_ID} from "./signalStore.ts";
 import {b64} from "./deviceKey.ts";
 import {publishKeys, replenishOneTime, selfCount, KeyDirectoryError, type PublishBody, type PreKeyPub} from "./keyDirectory.ts";
 import {logger} from "@/shared/logger/logger.ts";
@@ -63,11 +63,13 @@ async function buildAndPublish(store: SignalStore, deviceId: string, identity: {
     const signed = await KeyHelper.generateSignedPreKey(identity, SPK_ID);
     await store.storeSignedPreKey(SPK_ID, signed.keyPair);
     const opks = await generateOPKs(store, OPK_BATCH);
+    const lastResortPreKey = await ensureLastResortPreKey(store);
     const body: PublishBody = {
         deviceId,
         identityKey: b64(identity.pubKey),
         signedPreKey: { id: SPK_ID, publicKey: b64(signed.keyPair.pubKey), signature: b64(signed.signature) },
         oneTimePreKeys: opks,
+        lastResortPreKey,
     };
     await publishKeys(body);
     logger.debug("e2ee: keys published", {deviceId, opks: opks.length});
@@ -86,14 +88,33 @@ export async function republishCurrentDevice(store: SignalStore, deviceId: strin
     if (!identity) return 0;                        // not provisioned yet → nothing to assert
     const signed = await KeyHelper.generateSignedPreKey(identity, SPK_ID);
     await store.storeSignedPreKey(SPK_ID, signed.keyPair);
+    const lastResortPreKey = await ensureLastResortPreKey(store);   // backfill for installs provisioned pre-LRK
     const {oneTimePreKeysRemaining} = await publishKeys({
         deviceId,
         identityKey: b64(identity.pubKey),
         signedPreKey: {id: SPK_ID, publicKey: b64(signed.keyPair.pubKey), signature: b64(signed.signature)},
         oneTimePreKeys: [],                         // touch only — never perturb the existing OPK pool
+        lastResortPreKey,                           // stable (re-asserted); the directory keeps the same key
     });
     logger.debug("e2ee: re-asserted current device", {deviceId, remaining: oneTimePreKeysRemaining});
     return oneTimePreKeysRemaining;
+}
+
+/**
+ * Ensure this device has a REUSABLE last-resort prekey and return its public half for publishing. It is
+ * generated ONCE and kept STABLE (never rotated): a peer may hold its public between fetch and first send,
+ * and it must stay reusable on our side (the store no-ops removePreKey for its reserved id). A never-rotated
+ * reusable key has weaker per-handshake forward secrecy — that is inherent to "last resort", used only when
+ * the normal one-time-prekey pool is exhausted.
+ */
+async function ensureLastResortPreKey(store: SignalStore): Promise<PreKeyPub> {
+    let kp = await store.getLastResortPreKey();
+    if (!kp) {
+        const pk = await KeyHelper.generatePreKey(LAST_RESORT_PREKEY_ID);
+        await store.setLastResortPreKey(pk.keyPair);
+        kp = pk.keyPair;
+    }
+    return {id: LAST_RESORT_PREKEY_ID, publicKey: b64(kp.pubKey)};
 }
 
 /** Generate `count` one-time prekeys under freshly-allocated, NEVER-reused ids (persisted floor in the

@@ -11,6 +11,8 @@ export {computeSafetyNumber, formatSafetyNumber, markVerified, clearVerified, is
 export {cryptoStats, type CryptoStats} from "./lib/cryptoStats.ts";
 
 import {ensureProvisioned, maybeReplenish, republishCurrentDevice} from "./lib/provisioning.ts";
+import {selfCount} from "./lib/keyDirectory.ts";
+import {SignalStore} from "./lib/signalStore.ts";
 import {sweepExpired, E2EE_PLAINTEXT_TTL_MS} from "./lib/atRest.ts";
 import {logger} from "@/shared/logger/logger.ts";
 
@@ -20,6 +22,27 @@ let sweepTimer: ReturnType<typeof setInterval> | null = null;
 function armPlaintextSweep(): void {
     void sweepExpired(E2EE_PLAINTEXT_TTL_MS).catch(() => {});
     if (!sweepTimer) sweepTimer = setInterval(() => { void sweepExpired(E2EE_PLAINTEXT_TTL_MS).catch(() => {}); }, 60 * 60 * 1000);
+}
+
+// Replenish-on-demand: our one-time-prekey pool is drained by OTHERS fetching us, which we're never
+// notified about — so we poll our own remaining count and top up when it's low, not only at startup. This
+// keeps the pool from sitting exhausted (peers then fall back to signed-prekey-only) between launches.
+const REPLENISH_CHECK_MS = 30 * 60 * 1000;   // 30 min
+let replenishTimer: ReturnType<typeof setInterval> | null = null;
+async function checkReplenish(store: SignalStore, deviceId: string): Promise<void> {
+    try {
+        const {oneTimePreKeysRemaining} = await selfCount(deviceId);
+        await maybeReplenish(deviceId, oneTimePreKeysRemaining, store);
+    } catch { /* directory unreachable → next tick */ }
+}
+function armReplenishCheck(store: SignalStore, deviceId: string): void {
+    if (!replenishTimer) replenishTimer = setInterval(() => { void checkReplenish(store, deviceId); }, REPLENISH_CHECK_MS);
+    // Also re-check when the tab returns to the foreground after a long idle (likely drain while away).
+    try {
+        document.addEventListener("visibilitychange", () => {
+            if (document.visibilityState === "visible") void checkReplenish(store, deviceId);
+        });
+    } catch { /* no document (SSR/tests) */ }
 }
 
 /**
@@ -37,6 +60,7 @@ export function provisionE2EEInBackground(): void {
     void (async () => {
         try {
             const {store, deviceId, provisioned} = await ensureProvisioned();
+            armReplenishCheck(store, deviceId);   // poll our remaining OPKs and top up on demand
             if (!provisioned) {
                 // Already provisioned earlier. TOUCH this device so the directory keeps it fresh: the
                 // stale-device GC is keep-newest (prunes a device only if older than the TTL AND the user

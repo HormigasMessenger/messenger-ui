@@ -92,12 +92,16 @@ failure of the peer's message indicating the peer's identity key changed.
 - AND the safety number is marked unverified
 - AND the next send re-resolves and re-establishes the session.
 
-### Requirement: Client publishes and rotates a last-resort prekey
-The client SHALL generate a dedicated last-resort one-time prekey at provisioning,
-publish it flagged as last-resort, store its private half wrapped like any prekey, and
-rotate it on the startup republish (alongside the signed prekey). This lets a session
-to a peer whose normal pool is exhausted still complete X3DH with a one-time-prekey
-slot filled, rather than degrading to signed-prekey-only.
+### Requirement: Client publishes a reusable last-resort prekey
+The client SHALL generate a dedicated last-resort one-time prekey at provisioning under a
+reserved id, store its private half wrapped, and publish its public half. The prekey SHALL
+be STABLE (generated once, not rotated) and SHALL remain reusable on the recipient side:
+the local store SHALL NOT delete it when libsignal consumes a prekey (so it survives across
+incoming prekey messages), and its reserved id SHALL NOT enter the monotonic one-time-prekey
+id space. This lets a session to a peer whose normal pool is exhausted still complete X3DH
+with a one-time-prekey slot filled, rather than degrading to signed-prekey-only. (A
+never-rotated reusable key has weaker per-handshake forward secrecy — inherent to "last
+resort"; rotation is avoided because a peer may hold the public between fetch and first use.)
 
 #### Scenario: Establish a session against an exhausted peer pool
 - WHEN a sender fetches a peer whose normal one-time-prekey pool is empty
@@ -105,9 +109,14 @@ slot filled, rather than degrading to signed-prekey-only.
 - AND X3DH proceeds using it as the one-time prekey
 - AND the session is established (the safety floor is the same as signed-prekey-only).
 
-#### Scenario: Last-resort key rotates on startup
-- WHEN the client republishes on startup
-- THEN it publishes a freshly generated last-resort prekey.
+#### Scenario: Last-resort key stays reusable across incoming sessions
+- WHEN two different peers each establish a session using this device's last-resort prekey
+- THEN both prekey messages decrypt (the private is not deleted after the first use)
+- AND the reserved id never appears among newly-allocated one-time-prekey ids.
+
+#### Scenario: Backfill for installs provisioned before the feature
+- WHEN a device that has no stored last-resort prekey republishes on startup
+- THEN it generates, stores, and publishes one.
 
 ### Requirement: One-time prekeys are replenished on demand, not only at startup
 The client SHALL replenish its one-time-prekey pool whenever it observes its own

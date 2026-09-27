@@ -15,7 +15,7 @@ import {b64} from "../deviceKey";
 
 // A stateful in-memory stand-in for hormiga-key-directory: publish stores a device bundle under the
 // caller's userId; fetch returns them (and would consume an OPK — we keep it simple and don't deplete).
-type Bundle = { deviceId: string; identityKey: string; signedPreKey: {id:number;publicKey:string;signature:string}; oneTimePreKeys: {id:number;publicKey:string}[] };
+type Bundle = { deviceId: string; identityKey: string; signedPreKey: {id:number;publicKey:string;signature:string}; oneTimePreKeys: {id:number;publicKey:string}[]; lastResortPreKey?: {id:number;publicKey:string} };
 const dir: Record<string, Bundle[]> = {};
 let currentUser = "alice";                    // whom the auth header would identify
 
@@ -31,7 +31,10 @@ const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
         const user = decodeURIComponent(m[1]);
         const devices = (dir[user] || []).map((b) => ({
             deviceId: b.deviceId, identityKey: b.identityKey, signedPreKey: b.signedPreKey,
-            oneTimePreKey: b.oneTimePreKeys[0] ?? null, oneTimePreKeysRemaining: b.oneTimePreKeys.length,
+            // Mirror the server: serve a normal OPK if any, else the reusable last-resort key (not consumed).
+            oneTimePreKey: b.oneTimePreKeys[0] ?? b.lastResortPreKey ?? null,
+            oneTimePreKeyIsLastResort: !b.oneTimePreKeys[0] && !!b.lastResortPreKey,
+            oneTimePreKeysRemaining: b.oneTimePreKeys.length,
         }));
         return { ok: true, status: 200, text: async () => JSON.stringify({ userId: user, devices }) };
     }
@@ -173,5 +176,30 @@ describe("secretSession — X3DH + Double Ratchet, end to end", () => {
         await invalidatePeer(alice.store, "bob");                   // rekey hint / decrypt-fail
         await encryptTo(alice.store, "bob", alice.deviceId, "3");   // re-resolves → +1 fetch
         expect(rosterFetches("bob")).toBe(n + 1);
+    });
+
+    it("last-resort prekey: reusable across peers when the pool is exhausted", async () => {
+        const bob = await provisionAs("bob", "e2ee-lrk-bob");
+        // Exhaust Bob's NORMAL pool in the directory → a fetch now serves his reusable last-resort key.
+        dir["bob"][0].oneTimePreKeys = [];
+        expect(dir["bob"][0].lastResortPreKey).toBeTruthy();       // provisioning published one
+
+        const alice = await provisionAs("alice", "e2ee-lrk-alice");
+        const carol = await provisionAs("carol", "e2ee-lrk-carol");
+
+        // Alice establishes via Bob's last-resort key and Bob decrypts.
+        const ea = await encryptTo(alice.store, "bob", alice.deviceId, "from alice");
+        expect(await decryptFrom(bob.store, "alice", bob.deviceId, ea)).toBe("from alice");
+
+        // Carol establishes via the SAME last-resort key — Bob still decrypts, proving the last-resort
+        // private was NOT deleted after Alice's session (reusable on the recipient side).
+        const ec = await encryptTo(carol.store, "bob", carol.deviceId, "from carol");
+        expect(await decryptFrom(bob.store, "carol", bob.deviceId, ec)).toBe("from carol");
+    });
+
+    it("last-resort reserved id never enters the normal one-time-prekey id space", async () => {
+        const bob = await provisionAs("bob", "e2ee-lrk-ids");
+        const ids = await bob.store.allocatePreKeyIds(5);
+        for (const id of ids) expect(id).toBeLessThan(0x7fffffff);   // LAST_RESORT_PREKEY_ID
     });
 });

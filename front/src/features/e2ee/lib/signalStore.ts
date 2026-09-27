@@ -18,6 +18,10 @@ const META = "meta", PREKEYS = "prekeys", SIGNED = "signedprekeys", SESSIONS = "
  * consume a one-time prekey each time). Invalidated by TTL, a rekey hint, or a local decrypt failure. */
 export interface RosterSnapshot { deviceIds: string[]; fetchedAt: number }
 
+/** Reserved prekey id for the REUSABLE last-resort prekey (served when a device's normal OPK pool is
+ * exhausted). Max positive int32 so it never collides with the monotonic OPK ids (which start small). */
+export const LAST_RESORT_PREKEY_ID = 0x7fffffff;
+
 // A stored keypair: public half in the clear, private half wrapped.
 interface StoredKeyPair { pub: ArrayBuffer; priv: Wrapped }
 async function packKeyPair(kp: KeyPairType): Promise<StoredKeyPair> { return { pub: kp.pubKey, priv: await wrapBytes(kp.privKey) }; }
@@ -87,14 +91,30 @@ export class SignalStore implements StorageType {
     }
 
     // --- one-time prekeys ---
+    // The last-resort prekey uses a RESERVED id and is stored in META (not PREKEYS), so it never pollutes
+    // the monotonic OPK id floor and libsignal cannot delete it: loadPreKey routes the reserved id to it and
+    // removePreKey no-ops for it, keeping it REUSABLE across incoming prekey messages (the whole point).
     async loadPreKey(id: string | number): Promise<KeyPairType | undefined> {
+        if (Number(id) === LAST_RESORT_PREKEY_ID) return this.getLastResortPreKey();
         return unpackKeyPair((await (await this.db()).get(PREKEYS, String(id))) as StoredKeyPair | undefined);
     }
     async storePreKey(id: string | number, kp: KeyPairType): Promise<void> {
+        if (Number(id) === LAST_RESORT_PREKEY_ID) { await this.setLastResortPreKey(kp); return; }
         await (await this.db()).put(PREKEYS, await packKeyPair(kp), String(id));
     }
-    async removePreKey(id: string | number): Promise<void> { await (await this.db()).delete(PREKEYS, String(id)); }
+    async removePreKey(id: string | number): Promise<void> {
+        if (Number(id) === LAST_RESORT_PREKEY_ID) return; // reusable — never delete on use
+        await (await this.db()).delete(PREKEYS, String(id));
+    }
     async countPreKeys(): Promise<number> { return (await this.db()).count(PREKEYS); }
+
+    // --- last-resort prekey (reusable fallback; stored in META, keyed by a reserved id) ---
+    async getLastResortPreKey(): Promise<KeyPairType | undefined> {
+        return unpackKeyPair((await (await this.db()).get(META, "lastResort")) as StoredKeyPair | undefined);
+    }
+    async setLastResortPreKey(kp: KeyPairType): Promise<void> {
+        await (await this.db()).put(META, await packKeyPair(kp), "lastResort");
+    }
 
     /**
      * Allocate `count` fresh, strictly-increasing one-time-prekey ids and persist the new floor. Ids must

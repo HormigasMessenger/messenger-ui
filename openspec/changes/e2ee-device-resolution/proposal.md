@@ -71,11 +71,12 @@ OPKs are spent only on genuine session establishment.
   (without consuming it) instead of `null`, so X3DH keeps its full 4-DH shape rather
   than degrading. Note: the security floor is unchanged — a reused last-resort key is
   cryptographically equivalent to the existing `IK+SPK`-only fallback (it loses the
-  one-time replay/forward-secrecy property once reused). Its value is (a) a uniform
-  handshake shape for callers, and (b) an *independently rotatable* reusable key
-  (rotated on the startup republish like the SPK), so a pool drained by an attacker
-  still faces a key that turns over. It does not restore per-handshake one-timeness
-  under sustained exhaustion — only real replenishment does that.
+  one-time replay/forward-secrecy property once reused). Its value is a uniform
+  handshake shape for callers and a working session even under a drained pool. It is
+  generated once and kept **stable** (not rotated): a peer may hold its public between
+  fetch and first send, and it must stay reusable on the recipient side (the store
+  no-ops prekey deletion for its reserved id). It does not restore per-handshake
+  one-timeness under sustained exhaustion — only real replenishment does that.
 - **Replenish-on-demand (not only at startup).** Today `maybeReplenish` runs once, at
   app launch, against the count returned by the startup republish. A fast drain
   (many peers fetching, or the pre-cache per-send burn) then sits exhausted until the
