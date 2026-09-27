@@ -23,7 +23,7 @@ is a **clean domain model** and **strict layering** so the real-time complexity 
 | **Send voice / photo / video / file** | two-phase **presigned MinIO** upload; client-side image compress + video caps + thumbnails |
 | **Call** (audio or video), and **answer a call whose app was closed** | WebRTC over `SIGNAL_IN/OUT`; Web Push wakes the callee, who re-joins via a `call:ready` re-offer |
 | Get **notifications** naming the sender | dual channel (in-app + Web Push) through one Service-Worker arbiter, sender name from a persistent cache |
-| **Turn on a secret chat** — end-to-end encrypted 1:1 | opt-in **Signal protocol** (X3DH + Double Ratchet); the server sees only ciphertext. Verify with a **safety number**; messages disappear after 48h |
+| **Turn on a secret chat** — end-to-end encrypted 1:1 | opt-in **Signal protocol** (X3DH + Double Ratchet); the server sees only ciphertext. Verify with a **safety number**; messages disappear after 7 days ([design](docs/E2EE-DESIGN.md)) |
 | **Block/unblock**, **delete** a message | mutual block gating; author-checked delete |
 | Work **offline / reopen instantly** | PWA app-shell precache + IndexedDB caches (history, media, names) |
 | Use it in **Spanish or English** | `react-i18next`, persisted toggle |
@@ -145,10 +145,17 @@ per-frame in feature middleware — never through a single "last message" slot.
 - **Secret chats — full Signal-protocol E2EE (shipped).** Opt-in, 1:1. **X3DH** handshake from a backend key
   directory (`hormiga-key-directory`) + **Double Ratchet** per-message keys with forward secrecy — the server
   only ever sees an opaque envelope inside `payload.body`. Private keys are wrapped by a **non-extractable
-  device key** in IndexedDB; decrypted text is sealed at rest and **auto-wiped after 48h**. Out-of-band
-  **safety numbers** verify against a MITM. Because the transport is at-least-once and history-backed, a
-  message lost to a stalled ratchet is repaired by **orthogonal client-to-client recovery** (a fresh session,
-  AEAD-bound) rather than a key. Design + honest residuals in the
+  device key** in IndexedDB; decrypted text is sealed at rest and **auto-wiped after 7 days** (then shown as
+  *expired*, distinct from *lost*). Out-of-band **safety numbers** verify against a MITM. Identity is a
+  **device**: the directory serves *all* of a peer's devices (encrypt-to-all) with **keep-newest** GC, and the
+  sender **caches** sessions and **lazily re-resolves** a device switch via a metadata-only rekey hint —
+  spending one-time prekeys only on session establishment. A message lost to a stalled ratchet is repaired by
+  **orthogonal client-to-client recovery** (a fresh session, AEAD-bound) rather than a key. **Calls** are
+  end-to-end-authenticated too: DTLS-SRTP encrypts media, and the SDP (with its `a=fingerprint`) rides inside
+  the Signal session so the server cannot MITM the handshake; TURN uses short-lived HMAC credentials.
+  → **Full design + algorithms, with primary-source references:** [`docs/E2EE-DESIGN.md`](docs/E2EE-DESIGN.md)
+  (companion OpenSpec: [`e2ee-device-resolution`](openspec/changes/e2ee-device-resolution/proposal.md),
+  [`e2ee-call-signaling`](openspec/changes/e2ee-call-signaling/proposal.md)). Honest residuals also in the
   [encryption whitepaper](https://hormigasmessenger.github.io/messenger-design/encryption.html).
 - **Platform hardening** — strict enforcing CSP with a runtime-hashed inline script, pinned dependencies
   (`npm ci`), and a best-effort persistent-storage request to reduce eviction of keys/history.

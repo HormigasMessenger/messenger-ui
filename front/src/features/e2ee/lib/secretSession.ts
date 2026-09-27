@@ -34,15 +34,37 @@ function addrDeviceNum(deviceUuid: string): number {
 }
 const addrOf = (userId: string, deviceUuid: string) => new SignalProtocolAddress(userId, addrDeviceNum(deviceUuid));
 
+// How long a cached peer roster snapshot is trusted before the next send re-resolves it (ms).
+const ROSTER_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
+
+/** Invalidate the cached roster for a peer so the next send re-resolves from the directory. Established
+ * sessions are kept — only the "which devices" snapshot is dropped. Called on a rekey hint or a local
+ * decrypt failure (peer identity changed). */
+export async function invalidatePeer(store: SignalStore, peerUserId: string): Promise<void> {
+    await store.deleteRosterSnapshot(peerUserId);
+}
+
 /**
  * Ensure we have a Double Ratchet session to every one of `peerUserId`'s devices, establishing any missing
  * one via X3DH from its directory bundle. Fetching a bundle CONSUMES a one-time prekey server-side, so we
- * only fetch for devices we don't already have a session with. Returns the peer device UUIDs.
+ * take a FAST PATH: if a fresh roster snapshot exists AND we already hold a live session to each of its
+ * devices, we return those device ids WITHOUT touching the directory (no OPK spend). Only a cache miss /
+ * stale snapshot / missing session falls through to a fetch + X3DH. Returns the peer device UUIDs.
  */
 async function ensureSessions(store: SignalStore, peerUserId: string): Promise<string[]> {
+    // Fast path: reuse cached sessions when the roster snapshot is fresh and every device still has a session.
+    const snap = await store.getRosterSnapshot(peerUserId);
+    if (snap && snap.deviceIds.length && (Date.now() - snap.fetchedAt) < ROSTER_TTL_MS) {
+        let allLive = true;
+        for (const dev of snap.deviceIds) {
+            if (!(await store.loadSession(addrOf(peerUserId, dev).toString()))) { allLive = false; break; }
+        }
+        if (allLive) return snap.deviceIds;
+    }
+
     const known: string[] = [];
     const need: string[] = [];
-    // We can't enumerate sessions cheaply, so fetch the roster and check per device.
+    // Cache miss / stale → fetch the roster (consumes an OPK per device) and establish any missing sessions.
     const {devices} = await fetchUserKeys(peerUserId);
     if (devices.length === 0) throw new Error(NO_PEER_KEYS);   // peer never provisioned → can't X3DH
     for (const dev of devices) {
@@ -76,6 +98,8 @@ async function ensureSessions(store: SignalStore, peerUserId: string): Promise<s
     // Drop stored identities for any of the peer's OLD devices no longer in the roster (e.g. after a
     // re-provision). Otherwise a stale peer identity lingers and the safety number never reconverges.
     await store.retainPeerDevices(peerUserId, new Set(known.map((u) => addrOf(peerUserId, u).toString())));
+    // Cache the freshly-resolved roster so subsequent sends reuse the sessions without a fetch/OPK spend.
+    await store.putRosterSnapshot(peerUserId, known);
     return known;
 }
 

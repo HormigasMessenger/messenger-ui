@@ -74,13 +74,12 @@ async function buildAndPublish(store: SignalStore, deviceId: string, identity: {
 }
 
 /**
- * Re-publish THIS device's identity so the directory treats it as the user's CURRENT device.
- * The directory serves a peer only the most-recently-published device (v1 single-device). A user who
- * has provisioned in more than one place — a second browser, or a storage-eviction re-provision — leaves
- * other device rows behind; whichever was published LAST wins "current", even if it isn't the browser the
- * user is actually in. A peer would then verify against that other device's identity and the safety number
- * would never match. Touching on startup (bump identity updated_at + rotate the signed prekey; the OPK pool
- * is left intact) makes the ACTIVE browser current. Best-effort. Returns the server's remaining-OPK count.
+ * TOUCH this device in the directory so the keep-newest stale-device GC never prunes the active browser.
+ * The directory serves ALL of a user's devices (encrypt-to-all) and prunes a device only if it is older
+ * than the device TTL AND the user has a newer one. Touching on startup (bump updated_at + rotate the
+ * signed prekey; the OPK pool is left intact) keeps THIS browser fresh so it stays out of the GC. It no
+ * longer "asserts current" — that was the old single-device model. Best-effort; returns the server's
+ * remaining-OPK count so the caller can replenish if low.
  */
 export async function republishCurrentDevice(store: SignalStore, deviceId: string): Promise<number> {
     const identity = await store.getIdentityKeyPair();

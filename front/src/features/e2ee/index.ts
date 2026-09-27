@@ -33,15 +33,17 @@ export function provisionE2EEInBackground(): void {
     // wipe the device key + Signal identity + at-rest secret plaintext (unrecoverable; normal history
     // re-syncs from the server, secret history does not). Best-effort; a no-op where unsupported/denied.
     try { void navigator.storage?.persist?.(); } catch { /* ignore */ }
-    armPlaintextSweep();   // disappearing-messages GC (48h)
+    armPlaintextSweep();   // disappearing-messages GC (7-day TTL)
     void (async () => {
         try {
             const {store, deviceId, provisioned} = await ensureProvisioned();
             if (!provisioned) {
-                // Already provisioned earlier. Re-assert THIS browser as the user's current device (the
-                // directory serves peers only the latest-published one — a second browser or an evicted-
-                // storage re-provision would otherwise be served as "current" and break the safety number),
-                // then top up the OPK pool if it's low.
+                // Already provisioned earlier. TOUCH this device so the directory keeps it fresh: the
+                // stale-device GC is keep-newest (prunes a device only if older than the TTL AND the user
+                // has a newer one), so a touch-on-start bumps updated_at and rotates the signed prekey,
+                // keeping the ACTIVE browser out of the GC. The directory serves ALL of a user's devices
+                // (encrypt-to-all), so this no longer "asserts current" — it only keeps this one live.
+                // Then top up the OPK pool if it's low.
                 try {
                     const remaining = await republishCurrentDevice(store, deviceId);
                     await maybeReplenish(deviceId, remaining, store);

@@ -10,8 +10,13 @@ import {wrapBytes, unwrapBytes, type Wrapped} from "./deviceKey.ts";
 // Stores: meta (identity keypair + registrationId + deviceId) · prekeys · signedprekeys · sessions (ratchet
 // state, wrapped) · peers (peer public identity keys, for trust-on-first-use).
 
-const V = 1;
-const META = "meta", PREKEYS = "prekeys", SIGNED = "signedprekeys", SESSIONS = "sessions", PEERS = "peers";
+const V = 2;
+const META = "meta", PREKEYS = "prekeys", SIGNED = "signedprekeys", SESSIONS = "sessions", PEERS = "peers", ROSTER = "roster";
+
+/** A cached snapshot of a peer's device roster: which devices to encrypt to, and when we learned it.
+ * Lets the sender reuse established sessions WITHOUT re-fetching the directory on every send (which would
+ * consume a one-time prekey each time). Invalidated by TTL, a rekey hint, or a local decrypt failure. */
+export interface RosterSnapshot { deviceIds: string[]; fetchedAt: number }
 
 // A stored keypair: public half in the clear, private half wrapped.
 interface StoredKeyPair { pub: ArrayBuffer; priv: Wrapped }
@@ -30,7 +35,7 @@ export class SignalStore implements StorageType {
     private db(): Promise<IDBPDatabase> {
         return openDB(this.dbName, V, {
             upgrade(d) {
-                for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS]) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
+                for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS, ROSTER]) if (!d.objectStoreNames.contains(s)) d.createObjectStore(s);
             },
         });
     }
@@ -152,10 +157,24 @@ export class SignalStore implements StorageType {
         for (const k of keys) if (k.startsWith(prefix) && !keepAddrs.has(k)) await d.delete(PEERS, k);
     }
 
+    // --- peer roster cache (sender-side; avoids a directory fetch + OPK spend per send) ---
+    /** The cached device roster for a peer, or undefined if none is cached. */
+    async getRosterSnapshot(userId: string): Promise<RosterSnapshot | undefined> {
+        return (await (await this.db()).get(ROSTER, userId)) as RosterSnapshot | undefined;
+    }
+    /** Cache the peer's device roster with the current timestamp. */
+    async putRosterSnapshot(userId: string, deviceIds: string[]): Promise<void> {
+        await (await this.db()).put(ROSTER, {deviceIds: [...deviceIds], fetchedAt: Date.now()} as RosterSnapshot, userId);
+    }
+    /** Drop the cached roster for a peer so the next send re-resolves from the directory (keeps sessions). */
+    async deleteRosterSnapshot(userId: string): Promise<void> {
+        await (await this.db()).delete(ROSTER, userId);
+    }
+
     // --- wipe (logout) ---
     async clear(): Promise<void> {
         const d = await this.db();
-        for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS]) await d.clear(s);
+        for (const s of [META, PREKEYS, SIGNED, SESSIONS, PEERS, ROSTER]) await d.clear(s);
     }
 }
 

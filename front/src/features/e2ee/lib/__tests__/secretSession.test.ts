@@ -6,7 +6,7 @@ import "fake-indexeddb/auto";
 import {describe, it, expect, vi, beforeEach, afterEach} from "vitest";
 import {SignalStore} from "../signalStore";
 import {ensureProvisioned} from "../provisioning";
-import {encryptTo, decryptFrom} from "../secretSession";
+import {encryptTo, decryptFrom, invalidatePeer} from "../secretSession";
 import {b64} from "../deviceKey";
 
 // End-to-end 2c+2d: two independent "devices" (isolated IndexedDB stores) provision into a shared FAKE
@@ -115,9 +115,17 @@ describe("secretSession — X3DH + Double Ratchet, end to end", () => {
         bob = await provisionAs("bob", "e2ee-rp-b2");
         expect(bob.deviceId).not.toBe(oldBobDevice);
 
-        // Alice sends again → must establish a session to the fresh device, and the fresh Bob decrypts.
-        const e1 = await encryptTo(alice.store, "bob", alice.deviceId, "still there?");
-        expect(await decryptFrom(bob.store, "alice", bob.deviceId, e1)).toBe("still there?");
+        // With sender-side caching, Alice's NEXT send still targets the cached OLD device (she hasn't
+        // been told Bob moved) — the fresh Bob can't decrypt it. This is the mis-addressed case that, in
+        // production, makes Bob's new device emit a rekey hint. Simulate that hint via invalidatePeer.
+        const stale = await encryptTo(alice.store, "bob", alice.deviceId, "still there?");
+        await expect(decryptFrom(bob.store, "alice", bob.deviceId, stale)).rejects.toBeTruthy();
+        await invalidatePeer(alice.store, "bob");   // rekey hint → drop cached roster → re-resolve next send
+
+        // Alice resends → re-resolves from the directory, establishes a session to the fresh device, and
+        // the fresh Bob decrypts.
+        const e1 = await encryptTo(alice.store, "bob", alice.deviceId, "resent");
+        expect(await decryptFrom(bob.store, "alice", bob.deviceId, e1)).toBe("resent");
 
         // The stale OLD-device identity must have been pruned, so the safety number is now computed
         // over Bob's CURRENT identity — this is exactly what makes the numbers reconverge.
@@ -129,5 +137,41 @@ describe("secretSession — X3DH + Double Ratchet, end to end", () => {
         // And the healed session is bidirectional.
         const r1 = await encryptTo(bob.store, "alice", bob.deviceId, "yes");
         expect(await decryptFrom(alice.store, "bob", alice.deviceId, r1)).toBe("yes");
+    });
+
+    // Count GET fetches of a peer's roster (each would consume an OPK server-side).
+    const rosterFetches = (user: string) =>
+        fetchMock.mock.calls.filter(([url, init]) =>
+            (init === undefined || (init as RequestInit).method === undefined || (init as RequestInit).method === "GET")
+            && String(url).includes(`/keys/${user}`)).length;
+
+    it("caches the peer roster: only the FIRST send fetches (no per-send OPK burn)", async () => {
+        const alice = await provisionAs("alice", "e2ee-cache-a");
+        await provisionAs("bob", "e2ee-cache-b");
+        currentUser = "alice";
+
+        const before = rosterFetches("bob");
+        await encryptTo(alice.store, "bob", alice.deviceId, "1");   // cache miss → 1 fetch
+        const afterFirst = rosterFetches("bob");
+        expect(afterFirst).toBe(before + 1);
+
+        await encryptTo(alice.store, "bob", alice.deviceId, "2");   // cached → no fetch
+        await encryptTo(alice.store, "bob", alice.deviceId, "3");   // cached → no fetch
+        expect(rosterFetches("bob")).toBe(afterFirst);             // unchanged: sessions reused
+    });
+
+    it("invalidatePeer forces the next send to re-fetch the roster", async () => {
+        const alice = await provisionAs("alice", "e2ee-inv-a");
+        await provisionAs("bob", "e2ee-inv-b");
+        currentUser = "alice";
+
+        await encryptTo(alice.store, "bob", alice.deviceId, "1");   // establishes + caches
+        const n = rosterFetches("bob");
+        await encryptTo(alice.store, "bob", alice.deviceId, "2");   // cached → no fetch
+        expect(rosterFetches("bob")).toBe(n);
+
+        await invalidatePeer(alice.store, "bob");                   // rekey hint / decrypt-fail
+        await encryptTo(alice.store, "bob", alice.deviceId, "3");   // re-resolves → +1 fetch
+        expect(rosterFetches("bob")).toBe(n + 1);
     });
 });
