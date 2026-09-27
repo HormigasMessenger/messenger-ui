@@ -6,6 +6,13 @@ import {savePlaintext} from "../lib/atRest.ts";
 import {secretStateKey} from "../lib/failure.ts";
 import {addPending, allPending, bumpAttempt, removePending, type PendingItem} from "./pendingStore.ts";
 import {RECOVER_REQ, RECOVER_RESP, buildRequest, buildResponse, applyResponse, type RecoverReq, type RecoverResp} from "./protocol.ts";
+import {REKEY_HINT, makeThrottle, REKEY_COALESCE_MS} from "../lib/rekeyHint.ts";
+import {invalidatePeer} from "../lib/secretSession.ts";
+import {ensureProvisioned} from "../lib/provisioning.ts";
+
+// Coalesce inbound rekey hints: at most one roster re-resolve per peer per window (a spoofed/flooded hint
+// then costs at most one bounded directory re-fetch).
+const rekeyActThrottle = makeThrottle(REKEY_COALESCE_MS);
 
 // Client-to-client recovery (Step B), as a SELF-CONTAINED module. When a secret message can't be decrypted
 // (permanent gap / ciphertext the ratchet never saw), we ask the ORIGINAL sender to re-encrypt it from
@@ -66,7 +73,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         }
     };
 
-    // Retry loop: re-request due items (capped backoff); give up + mark "lost" only past the 48h window.
+    // Retry loop: re-request due items (capped backoff); give up + mark "lost" only past the 7-day window.
     let timer: ReturnType<typeof setInterval> | null = null;
     const startTimer = () => {
         if (timer) return;
@@ -76,7 +83,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         if (!wsConnected()) return;
         const now = Date.now();
         const pend = await allPending();
-        // Give up ONLY once the sender can no longer help — past the 48h recovery window (its plaintext is
+        // Give up ONLY once the sender can no longer help — past the 7-day recovery window (its plaintext is
         // gone by then anyway). Not after N quick retries: a sender offline for a few minutes is normal, and
         // a late response would otherwise be dropped and the message wrongly shown "lost".
         const expired = pend.filter((p) => now - p.createdAt > RECOVERY_WINDOW_MS);
@@ -112,6 +119,21 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
         // (2) incoming SIGNAL recovery frames (routed here via frameBridge e2ee: → SIGNAL).
         if (a?.type === "ws/incoming") {
             const f = a.payload as {type?: string; from?: string; conversationId?: string; clientIds?: string[]; items?: RecoverResp["items"]; missing?: string[]};
+
+            // Rekey hint: a peer's device received a message we addressed to a stale device of theirs. Drop our
+            // cached roster for that peer so the next send re-resolves from the directory (and encrypts to all
+            // their current devices). Only a trigger to re-fetch — never trusts any device from the hint.
+            if (f?.type === REKEY_HINT && f.from) {
+                const peer = f.from;
+                if (rekeyActThrottle(peer)) void (async () => {
+                    try {
+                        const {store} = await ensureProvisioned();
+                        await invalidatePeer(store, peer);
+                        logger.info("e2ee: rekey hint → peer roster invalidated", {peer});
+                    } catch (e) { logger.warn("e2ee: rekey hint handling failed", e as Error); }
+                })();
+                return result;
+            }
             if (f?.type === RECOVER_REQ && f.from && f.conversationId && Array.isArray(f.clientIds)) {
                 void withPeerLock(f.from, async () => {
                     try {
@@ -145,7 +167,7 @@ export const e2eeRecoveryMiddleware: Middleware = (store) => {
                             await removePending(forClientId);
                             done.add(forClientId);
                         }
-                        // Definitive NACK from the sender: it sent these but no longer holds them (past the 48h
+                        // Definitive NACK from the sender: it sent these but no longer holds them (past the 7-day
                         // window) or never did — mark lost NOW instead of waiting out the retry budget. Never
                         // clobber a message the same response just recovered (id in both lists).
                         let lost = 0;

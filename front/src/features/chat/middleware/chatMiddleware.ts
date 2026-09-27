@@ -15,12 +15,16 @@ import {showDesktopNotification} from "@/features/notifications";
 import {isSecretEnvelope, decryptReceived} from "@/features/e2ee/lib/secretChat.ts";
 import {savePlaintext, loadPlaintext, E2EE_PLAINTEXT_TTL_MS} from "@/features/e2ee/lib/atRest.ts";
 import {reportUndecryptable} from "@/features/e2ee";
-import {classifyDecryptError, isRecoverable, secretStateKey} from "@/features/e2ee/lib/failure.ts";
+import {classifyDecryptError, isRecoverable, isWrongDevice, secretStateKey} from "@/features/e2ee/lib/failure.ts";
+import {buildRekeyHint, makeThrottle, REKEY_COALESCE_MS} from "@/features/e2ee/lib/rekeyHint.ts";
 import {ulidTimeMs, isUlid} from "@/shared/ulid/ulid.ts";
 import i18n from "@/shared/i18n";
 
 // How long a "peer is typing" indicator lingers before auto-clearing if no follow-up frame.
 const TYPING_TIMEOUT_MS = 4000;
+
+// Coalesce rekey hints: at most one per peer per window, however many mis-addressed envelopes arrive.
+const rekeyHintThrottle = makeThrottle(REKEY_COALESCE_MS);
 
 /**
  * Routes incoming chat/read/typing WS frames per-frame, the same way presenceMiddleware routes
@@ -145,6 +149,11 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                         if (stored != null) { patch(stored); return; }
                         const peerId = frame.senderId ?? msg.from;
                         const failure = classifyDecryptError(e);
+                        // Mis-addressed to another of our devices → nudge the sender to re-resolve our roster
+                        // (metadata-only hint, coalesced per peer). The message itself is still recovered below.
+                        if (peerId && isWrongDevice(failure) && rekeyHintThrottle(peerId)) {
+                            dispatch({type: "ws/send", payload: buildRekeyHint(peerId, chatId)});
+                        }
                         if (cid && peerId && isRecoverable(failure)) {
                             patch(i18n.t(secretStateKey("pending")));
                             dispatch(reportUndecryptable({chatId, peerId, items: [{clientId: cid, serverId: msg.id}]}) as never);

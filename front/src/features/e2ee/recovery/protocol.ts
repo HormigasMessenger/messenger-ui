@@ -14,7 +14,7 @@ export const MAX_RECOVER_BATCH = 50;          // cap ids per request (anti-storm
 
 export interface RecoverReq { type: typeof RECOVER_REQ; to: string; conversationId: string; clientIds: string[] }
 // `items` = messages the responder could re-encrypt; `missing` = ids it CANNOT provide (expired past the
-// 48h window, or it never held them). The NACK matters: without it the requester can't tell "the sender is
+// 7-day window, or it never held them). The NACK matters: without it the requester can't tell "the sender is
 // still thinking / offline" from "the sender genuinely can't help", so it would wait out the whole retry
 // budget (~6 min) before giving up. With it, an unrecoverable message is marked lost as soon as the sender
 // answers — a definitive outcome, not silent limbo.
@@ -33,7 +33,7 @@ export function buildRequest(peerId: string, chatId: string, clientIds: string[]
  * (`to` set) AND it was addressed to THIS requester AND it belongs to THIS conversation. Without that,
  * anyone who learns a server-visible clientId (the server sees it as client_message_id) could forge a
  * request and pull the plaintext out of the sender — defeating E2EE against a malicious server. Anything
- * we can't vouch for that way (unknown / received-not-sent / other recipient / other chat / expired > 48h)
+ * we can't vouch for that way (unknown / received-not-sent / other recipient / other chat / expired > 7d)
  * is NACK'd via `missing`. Batch is capped (anti-oracle). If re-encryption itself fails (e.g. the
  * requester has no keys right now) we still return the NACKs, and the requester retries the rest.
  */

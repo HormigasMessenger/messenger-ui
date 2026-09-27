@@ -10,15 +10,17 @@
 export const MAX_SKIP_PER_CHAIN = 2000;
 
 export type DecryptFailure =
-    | "hard-gap"     // skipped past MAX_SKIP, or the message key was never filled → can't heal on THIS chain
-    | "duplicate"    // the message key was already consumed (replay / redelivery of something we decrypted)
-    | "no-session"   // no session/identity for this sender/device yet
-    | "corrupt"      // malformed envelope / undecodable ciphertext (not recoverable by re-request)
+    | "hard-gap"      // skipped past MAX_SKIP, or the message key was never filled → can't heal on THIS chain
+    | "duplicate"     // the message key was already consumed (replay / redelivery of something we decrypted)
+    | "no-session"    // no session/identity for this sender/device yet
+    | "wrong-device"  // the envelope carries no ciphertext for THIS device → the sender has a stale device roster
+    | "corrupt"       // malformed envelope / undecodable ciphertext (not recoverable by re-request)
     | "unknown";
 
 /** Classify a raw error thrown by the ratchet/seam into the taxonomy above (best-effort on message text). */
 export function classifyDecryptError(e: unknown): DecryptFailure {
     const msg = (e instanceof Error ? e.message : String(e ?? "")).toLowerCase();
+    if (msg.includes("no ciphertext for this device")) return "wrong-device"; // we're a parallel/new device the sender didn't encrypt to
     if (msg.includes("into the future")) return "hard-gap";                 // > MAX_SKIP_PER_CHAIN
     if (msg.includes("counter was repeated") || msg.includes("key not found")) return "hard-gap"; // gap or dup — treat as gap; a real dup is served from at-rest before we ever get here
     if (msg.includes("no record") || msg.includes("no session") || msg.includes("identity")) return "no-session";
@@ -28,7 +30,13 @@ export function classifyDecryptError(e: unknown): DecryptFailure {
 
 /** Whether a failure can plausibly be repaired by asking the sender to re-encrypt (client-to-client recovery). */
 export function isRecoverable(f: DecryptFailure): boolean {
-    return f === "hard-gap" || f === "no-session" || f === "unknown";       // corrupt/duplicate never re-request
+    return f === "hard-gap" || f === "no-session" || f === "wrong-device" || f === "unknown"; // corrupt/duplicate never re-request
+}
+
+/** Whether the failure means the sender addressed a device that isn't us — it should re-resolve our roster
+ * (send a rekey hint), in addition to the message being recovered. */
+export function isWrongDevice(f: DecryptFailure): boolean {
+    return f === "wrong-device";
 }
 
 // What the user sees for a secret message, as a small closed set — never the guessy raw error.

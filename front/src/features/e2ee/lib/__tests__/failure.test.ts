@@ -1,6 +1,6 @@
 import {describe, it, expect} from "vitest";
 import {
-    MAX_SKIP_PER_CHAIN, classifyDecryptError, isRecoverable, secretStateKey,
+    MAX_SKIP_PER_CHAIN, classifyDecryptError, isRecoverable, isWrongDevice, secretStateKey,
     type DecryptFailure, type SecretMsgState,
 } from "../failure";
 
@@ -18,6 +18,7 @@ describe("failure taxonomy", () => {
             ["Identity key changed", "no-session"],
             ["e2ee: not an envelope", "corrupt"],
             ["Unexpected token < in JSON at position 0", "corrupt"],
+            ["e2ee: envelope has no ciphertext for this device", "wrong-device"],
             ["something totally unexpected", "unknown"],
         ];
         for (const [msg, want] of cases) {
@@ -31,18 +32,27 @@ describe("failure taxonomy", () => {
         expect(classifyDecryptError(undefined)).toBe("unknown");
     });
 
-    it("marks a hard-gap / no-session / unknown as recoverable, but never corrupt or duplicate", () => {
+    it("marks hard-gap / no-session / wrong-device / unknown as recoverable, but never corrupt or duplicate", () => {
         expect(isRecoverable("hard-gap")).toBe(true);
         expect(isRecoverable("no-session")).toBe(true);
+        expect(isRecoverable("wrong-device")).toBe(true);
         expect(isRecoverable("unknown")).toBe(true);
         expect(isRecoverable("corrupt")).toBe(false);
         expect(isRecoverable("duplicate")).toBe(false);
+    });
+
+    it("flags only wrong-device for a rekey hint", () => {
+        expect(isWrongDevice("wrong-device")).toBe(true);
+        for (const f of ["hard-gap", "no-session", "duplicate", "corrupt", "unknown"] as DecryptFailure[]) {
+            expect(isWrongDevice(f)).toBe(false);
+        }
     });
 
     it("maps every visible state to a stable i18n key", () => {
         const map: Record<SecretMsgState, string> = {
             decrypting: "chat.decrypting",
             pending: "chat.decryptPending",
+            expired: "chat.decryptExpired",
             lost: "chat.decryptLost",
             unavailable: "chat.decryptUnavailable",
         };
