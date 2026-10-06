@@ -7,6 +7,7 @@ import {AttachmentAudio} from "./AttachmentAudio.tsx";
 import {AttachmentVideo} from "./AttachmentVideo.tsx";
 import {linkify} from "./messageFormat.tsx";
 import {isSecretEnvelope} from "@/features/e2ee/lib/secretChat.ts";
+import {MessageMenu, type MsgMenuItem} from "./MessageMenu.tsx";
 
 export interface ChatMessageView {
     id: string;
@@ -61,14 +62,36 @@ export function MessageBubble({
             .then(() => toast.success(t("chat.copied", {defaultValue: "Copied"})))
             .catch(() => toast.error(t("chat.copyError", {defaultValue: "Couldn't copy"})));
     };
+    // Actions menu (⋯) — Copy / Forward / Delete. Delete only for an actually-SENT own message (an un-sent
+    // one is discarded via the inline status control below, not server-deleted).
+    const menuItems: MsgMenuItem[] = [];
+    if (canCopyForward) {
+        menuItems.push({key: "copy", icon: "⧉", label: t("chat.copy", {defaultValue: "Copy"}), onClick: copyText});
+        if (onForwardMessage) {
+            menuItems.push({key: "forward", icon: "➢", label: t("chat.forward", {defaultValue: "Forward"}), onClick: () => onForwardMessage(msg.text)});
+        }
+    }
+    if (onDeleteMessage && msg.fromMe && !status) {
+        menuItems.push({
+            key: "delete", icon: "🗑", danger: true,
+            label: t("chat.deleteMessage"), ariaLabel: t("chat.deleteMessage"),
+            onClick: () => onDeleteMessage(msg.id, msg.meta?.attachmentId),
+        });
+    }
     return (
         <div
-            className={`${bubbleMt} max-w-xs px-4 py-2 rounded-lg text-sm whitespace-pre-wrap break-words ${
+            className={`group relative ${bubbleMt} max-w-xs py-2 pl-4 ${menuItems.length ? "pr-9" : "pr-4"} rounded-lg text-sm whitespace-pre-wrap break-words ${
                 msg.fromMe
                     ? "ml-auto bg-teal-950 text-white rounded-br-none"
                     : "mr-auto bg-white text-teal-950 rounded-bl-none"
             }`}
         >
+            {/* Per-message actions (⋯) at the top-right corner (clear of the group author label on the left). */}
+            {menuItems.length > 0 && (
+                <div className="absolute top-1 right-1">
+                    <MessageMenu items={menuItems} align="right" />
+                </div>
+            )}
             {/* Author label — only on a peer's bubble in a GROUP (in 1:1 the sender is obvious). */}
             {isGroup && !msg.fromMe && authorName && (
                 <div className="text-[11px] font-semibold text-teal-700 mb-0.5">{authorName}</div>
@@ -113,19 +136,6 @@ export function MessageBubble({
                 <span className="ml-1 text-[10px] align-bottom opacity-70" title={t("chat.secretOn")}>🔒</span>
             )}
             <span className="ml-2 text-[10px] align-bottom opacity-50">{formatLocalTime(msg.createdAt)}</span>
-            {/* Copy to clipboard / forward to another chat — text messages only. */}
-            {canCopyForward && (
-                <span className="ml-2 text-[10px] align-bottom">
-                    <button onClick={copyText} title={t("chat.copy", {defaultValue: "Copy"})}
-                            aria-label={t("chat.copy", {defaultValue: "Copy"})}
-                            className="opacity-40 hover:opacity-100">⧉</button>
-                    {onForwardMessage && (
-                        <button onClick={() => onForwardMessage(msg.text)} title={t("chat.forward", {defaultValue: "Forward"})}
-                                aria-label={t("chat.forward", {defaultValue: "Forward"})}
-                                className="ml-1 opacity-40 hover:opacity-100">➢</button>
-                    )}
-                </span>
-            )}
             {msg.fromMe && (() => {
                 if (status === "failed") {
                     return (
@@ -178,18 +188,7 @@ export function MessageBubble({
                     </span>
                 );
             })()}
-            {/* Server-side "delete for me" — only for an actually-sent message (no outbox status).
-                A pending/sending/failed one is discarded from the queue via the status block above. */}
-            {onDeleteMessage && msg.fromMe && !status && (
-                <button
-                    onClick={() => onDeleteMessage(msg.id, msg.meta?.attachmentId)}
-                    title={t("chat.deleteMessage")}
-                    aria-label={t("chat.deleteMessage")}
-                    className="ml-2 text-[10px] opacity-40 hover:opacity-100"
-                >
-                    🗑
-                </button>
-            )}
+            {/* Server-side "delete for me" lives in the ⋯ actions menu (built above) for a sent message. */}
         </div>
     );
 }

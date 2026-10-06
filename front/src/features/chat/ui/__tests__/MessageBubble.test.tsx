@@ -1,5 +1,5 @@
 import {describe, it, expect, vi} from "vitest";
-import {render} from "@testing-library/react";
+import {render, fireEvent} from "@testing-library/react";
 import {MessageBubble, type ChatMessageView} from "../MessageBubble";
 
 vi.mock("react-i18next", () => ({useTranslation: () => ({t: (k: string) => k})}));
@@ -74,8 +74,12 @@ describe("MessageBubble discard / delete affordances", () => {
         expect(c.querySelector("button[aria-label='chat.deleteMessage']")).toBeNull();
     });
 
-    it("shows the server-side delete only on an actually-sent message (no outbox status)", () => {
+    it("shows the server-side delete in the ⋯ menu of an actually-sent message (no outbox status)", () => {
         const c = renderBubble({onDeleteMessage: vi.fn()}); // status undefined = sent/server row
+        // Delete now lives in the actions menu — closed by default, revealed by the ⋯ trigger.
+        const trigger = c.querySelector("button[aria-label='chat.messageActions']") as HTMLButtonElement;
+        expect(trigger).toBeTruthy();
+        fireEvent.click(trigger);   // open the menu (wrapped in act, so the state update flushes)
         expect(c.querySelector("button[aria-label='chat.deleteMessage']")).toBeTruthy();
     });
 });
