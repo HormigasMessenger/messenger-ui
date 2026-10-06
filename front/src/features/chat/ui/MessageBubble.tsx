@@ -1,3 +1,4 @@
+import toast from "react-hot-toast";
 import {useTranslation} from "react-i18next";
 import {isUlid, ulidTimeMs} from "@/shared/ulid/ulid.ts";
 import {formatLocalTime} from "@/shared/lib/datetime.ts";
@@ -5,6 +6,7 @@ import {AttachmentImage} from "./AttachmentImage.tsx";
 import {AttachmentAudio} from "./AttachmentAudio.tsx";
 import {AttachmentVideo} from "./AttachmentVideo.tsx";
 import {linkify} from "./messageFormat.tsx";
+import {isSecretEnvelope} from "@/features/e2ee/lib/secretChat.ts";
 
 export interface ChatMessageView {
     id: string;
@@ -33,6 +35,7 @@ export function MessageBubble({
     onResolveAttachment,
     onDownloadAttachment,
     onDeleteMessage,
+    onForwardMessage,
     onRetryMessage,
     onDiscardMessage,
 }: {
@@ -45,10 +48,19 @@ export function MessageBubble({
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
     onDownloadAttachment?: (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => void;
     onDeleteMessage?: (id: string, attachmentId?: string) => void;
+    onForwardMessage?: (text: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;
 }) {
     const {t} = useTranslation();
+    // Copy / forward apply to real TEXT only — not attachments, and not a secret message still showing
+    // its raw envelope (undecrypted). A decrypted secret message copies/forwards its plaintext.
+    const canCopyForward = msg.kind !== "attachment" && !isSecretEnvelope(msg.text) && !!msg.text.trim();
+    const copyText = () => {
+        navigator.clipboard?.writeText(msg.text)
+            .then(() => toast.success(t("chat.copied", {defaultValue: "Copied"})))
+            .catch(() => toast.error(t("chat.copyError", {defaultValue: "Couldn't copy"})));
+    };
     return (
         <div
             className={`${bubbleMt} max-w-xs px-4 py-2 rounded-lg text-sm whitespace-pre-wrap break-words ${
@@ -89,6 +101,11 @@ export function MessageBubble({
                         📎 {msg.meta?.fileName ?? msg.text ?? "archivo"}
                     </button>
                 )
+            ) : isSecretEnvelope(msg.text) ? (
+                // A secret message whose plaintext hasn't been patched in yet (the decrypt runs a beat
+                // after history loads): show a placeholder, NEVER the raw E2EE envelope — that was the
+                // "encrypted text flashes for a few seconds" on open.
+                <span className="italic opacity-60">{t("chat.decrypting")}</span>
             ) : (
                 linkify(msg.text)
             )}
@@ -96,6 +113,19 @@ export function MessageBubble({
                 <span className="ml-1 text-[10px] align-bottom opacity-70" title={t("chat.secretOn")}>🔒</span>
             )}
             <span className="ml-2 text-[10px] align-bottom opacity-50">{formatLocalTime(msg.createdAt)}</span>
+            {/* Copy to clipboard / forward to another chat — text messages only. */}
+            {canCopyForward && (
+                <span className="ml-2 text-[10px] align-bottom">
+                    <button onClick={copyText} title={t("chat.copy", {defaultValue: "Copy"})}
+                            aria-label={t("chat.copy", {defaultValue: "Copy"})}
+                            className="opacity-40 hover:opacity-100">⧉</button>
+                    {onForwardMessage && (
+                        <button onClick={() => onForwardMessage(msg.text)} title={t("chat.forward", {defaultValue: "Forward"})}
+                                aria-label={t("chat.forward", {defaultValue: "Forward"})}
+                                className="ml-1 opacity-40 hover:opacity-100">➢</button>
+                    )}
+                </span>
+            )}
             {msg.fromMe && (() => {
                 if (status === "failed") {
                     return (

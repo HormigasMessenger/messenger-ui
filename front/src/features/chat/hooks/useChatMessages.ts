@@ -24,9 +24,14 @@ export function useChatMessages() {
        conversation id). getChatHistory maps a 404 (a conversation with no message backing yet) to an
        empty list, so it never leaves RTK's `data` holding the PREVIOUS chat's rows.
     ====================== */
-    const {data = [], isLoading, isError, error} = chatApi.useGetChatHistoryQuery(
+    // Use `currentData` (per-arg), NOT `data`: RTK Query's `data` RETAINS the previous chat's rows while
+    // the new chat's history is fetching — which rendered the OLD conversation's messages under the NEW
+    // header on a slow switch. `currentData` is undefined until THIS chat resolves, so we show a loader
+    // instead of stale rows. `isFetching` + no current data = "loading the selected chat".
+    const {currentData, isFetching, isError, error} = chatApi.useGetChatHistoryQuery(
         selectedChatId ? {myId, chatId: selectedChatId} : skipToken
     );
+    const loadingHistory = !!selectedChatId && isFetching && currentData === undefined;
 
     // Surface, don't swallow: a server error loading history used to fall back to an empty list,
     // indistinguishable from a genuinely empty chat and with no log. Log it and expose isError so
@@ -65,15 +70,15 @@ export function useChatMessages() {
     ====================== */
     const messages = useMemo(
         () =>
-            [...data]
+            [...(currentData ?? [])]
                 .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
                 .map((msg) => toChatMessageView(msg, myId)),
-        [data, myId]
+        [currentData, myId]
     );
 
     return {
         messages,
-        isLoading,
+        loadingHistory,
         isError,
         reloadChatHistory,
         clearChat,

@@ -14,6 +14,7 @@ import {useOutboxRetry} from "@/features/chat/hooks/useOutboxRetry.ts";
 import {useCallTimeout} from "@/features/call/hooks/useCallTimeout.ts";
 import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
 import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
+import {ForwardModal} from "@/features/chat/ui/ForwardModal.tsx";
 
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, answerViaPush, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
@@ -100,6 +101,8 @@ export default function Messenger() {
        Delete modal
     ====================== */
     const [showDeleteModal, setShowDeleteModal] = useState(false);
+    // Text of the message being forwarded (null = picker closed). The picker chooses a target chat.
+    const [forwardText, setForwardText] = useState<string | null>(null);
 
     /* ======================
        Call status from Redux
@@ -149,6 +152,7 @@ export default function Messenger() {
                 counterpartId={selectedCounterpartId}
                 isGroup={chat.selectedIsGroup}
                 messages={chat.messages}
+                loadingHistory={chat.loadingHistory}
                 historyError={chat.historyError}
                 onReloadHistory={chat.reloadChatHistory}
                 inputText={chat.messageInput}
@@ -160,6 +164,7 @@ export default function Messenger() {
                 blockedByMe={chat.selectedBlockedByMe}
                 blockedByPeer={chat.selectedBlockedByPeer}
                 onDeleteMessage={chat.deleteMessage}
+                onForwardMessage={setForwardText}
                 onSendAttachment={chat.sendAttachment}
                 uploadProgress={chat.uploadProgress}
                 onDownloadAttachment={chat.downloadAttachment}
@@ -171,6 +176,16 @@ export default function Messenger() {
                 onCall={onCall}
                 onAudioCall={onAudioCall}
             />
+
+            {/* ===== Forward picker ===== */}
+            {forwardText !== null && (
+                <ForwardModal
+                    chats={chat.filteredChats}
+                    preview={forwardText}
+                    onPick={(targetChatId) => { chat.forwardMessage(targetChatId, forwardText); setForwardText(null); }}
+                    onClose={() => setForwardText(null)}
+                />
+            )}
 
             {/* ===== Video Call ===== */}
             {callStatus !== "idle" && (

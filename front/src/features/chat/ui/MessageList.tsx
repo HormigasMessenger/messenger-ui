@@ -20,6 +20,7 @@ export function MessageList({
     outboxStatusById,
     isGroup,
     authorName,
+    loadingHistory,
     historyError,
     onReloadHistory,
     hasEarlier,
@@ -30,6 +31,7 @@ export function MessageList({
     onResolveAttachment,
     onDownloadAttachment,
     onDeleteMessage,
+    onForwardMessage,
     onRetryMessage,
     onDiscardMessage,
 }: {
@@ -42,6 +44,7 @@ export function MessageList({
     outboxStatusById?: Record<string, string>;
     isGroup?: boolean;
     authorName: (id?: string) => string | undefined;
+    loadingHistory?: boolean;
     historyError?: boolean;
     onReloadHistory?: () => void;
     hasEarlier: boolean;
@@ -52,6 +55,7 @@ export function MessageList({
     onResolveAttachment?: (attachmentId: string) => Promise<string | null>;
     onDownloadAttachment?: (attachmentId: string, meta?: {fileName?: string; contentType?: string}) => void;
     onDeleteMessage?: (id: string, attachmentId?: string) => void;
+    onForwardMessage?: (text: string) => void;
     onRetryMessage?: (id: string) => void;
     onDiscardMessage?: (id: string) => void;
 }) {
@@ -72,6 +76,14 @@ export function MessageList({
                         )}
                     </div>
                 )}
+                {/* Loading the SELECTED chat's history: show a spinner, never the previous chat's rows
+                    (the header already shows the new contact — stale rows under it were disorienting). */}
+                {loadingHistory ? (
+                    <div className="flex items-center justify-center py-10" role="status" aria-live="polite">
+                        <span className="inline-block h-6 w-6 animate-spin rounded-full border-2 border-teal-700 border-t-transparent" aria-hidden="true" />
+                        <span className="sr-only">{t("loading")}</span>
+                    </div>
+                ) : (<>
                 {hasEarlier && (
                     <button
                         onClick={showEarlier}
@@ -107,12 +119,14 @@ export function MessageList({
                         onResolveAttachment={onResolveAttachment}
                         onDownloadAttachment={onDownloadAttachment}
                         onDeleteMessage={onDeleteMessage}
+                        onForwardMessage={onForwardMessage}
                         onRetryMessage={onRetryMessage}
                         onDiscardMessage={onDiscardMessage}
                     />
                     </Fragment>
                     );
                 })}
+                </>)}
                 <div ref={bottomRef}/>
                 </div>
             </div>

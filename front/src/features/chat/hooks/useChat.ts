@@ -79,7 +79,7 @@ export function useChat() {
 
     // Declared before the handlers that reference them (reloadChatHistory/clearChat/markRead).
     const {unreadChats, markRead} = useUnreadChats();
-    const {messages, isError: historyError, reloadChatHistory, clearChat} = useChatMessages();
+    const {messages, loadingHistory, isError: historyError, reloadChatHistory, clearChat} = useChatMessages();
 
     // Attachment lifecycle (upload/download/resolve + progress) lives in its own hook.
     const {uploadProgress, sendAttachment, downloadAttachment, getAttachmentUrl} =
@@ -156,7 +156,7 @@ export function useChat() {
     const {outboxStatusById, retryMessage, discardMessage} = useOutboxStatus({selectedChatId, myId});
 
     // Composer state + send + typing notifier live in their own hook.
-    const {messageInput, setMessageInput, sendMessage, notifyTyping} =
+    const {messageInput, setMessageInput, sendMessage, forwardMessage, notifyTyping} =
         useMessageComposer({selectedChatId, myId, getSummary});
 
     return {
@@ -182,9 +182,11 @@ export function useChat() {
         setSearchQuery,
         openChat,
         sendMessage,
+        forwardMessage,
         deleteChat,
         unreadChats,
         messages,
+        loadingHistory,
         historyError,
         reloadChatHistory,
         outboxStatusById,

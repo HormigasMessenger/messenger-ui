@@ -66,6 +66,24 @@ export function useMessageComposer(params: {
         // watermark, so it renders ✓ until a READ_OUT advances the watermark past it. No global reset.
     }, [selectedChatId, getSummary, myId, dispatch, t, isSecretChat]);
 
+    // Forward a message's TEXT into ANOTHER chat: enqueue it there as a fresh message (same outbox path
+    // as a normal send), honoring the TARGET chat's secret setting. Text only — attachments would need
+    // re-upload/re-encryption (deferred). The target may be any conversation, not the open one.
+    const forwardMessage = useCallback((targetChatId: string, text: string) => {
+        if (!targetChatId || !text.trim()) return;
+        const summary = getSummary(targetChatId);
+        if (!summary) {
+            logger.warn("forwardMessage: no summary for target chat", {targetChatId});
+            toast.error(t("chat.msgSendError", {defaultValue: "Couldn't send — reopen the chat"}));
+            return;
+        }
+        const secret = isSecretChat(targetChatId);
+        void chatMessagesService.enqueueChatMessage(
+            dispatch, text, myId, targetChatId, summary.counterpartId, summary.orderId, secret
+        );
+        toast.success(t("chat.forwarded", {defaultValue: "Forwarded"}));
+    }, [getSummary, myId, dispatch, t, isSecretChat]);
+
     // Throttled "I'm typing" notifier (TYPING_IN → peer's TYPING_OUT). Called on input change.
     const lastTypingRef = useRef(0);
     const notifyTyping = useCallback(() => {
@@ -77,5 +95,5 @@ export function useMessageComposer(params: {
         if (s) dispatch({type: "ws/send", payload: buildTypingIn(selectedChatId, s.counterpartId)});
     }, [selectedChatId, getSummary, dispatch]);
 
-    return {messageInput, setMessageInput, sendMessage, notifyTyping};
+    return {messageInput, setMessageInput, sendMessage, forwardMessage, notifyTyping};
 }

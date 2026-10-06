@@ -21,6 +21,7 @@ interface ChatWindowProps {
     counterpartId?: string | null;
     isGroup?: boolean;
     messages: ChatMessageView[];
+    loadingHistory?: boolean;
     historyError?: boolean;
     onReloadHistory?: () => void;
     inputText: string;
@@ -35,6 +36,7 @@ interface ChatWindowProps {
     blockedByMe?: boolean;
     blockedByPeer?: boolean;
     onDeleteMessage?: (id: string, attachmentId?: string) => void;
+    onForwardMessage?: (text: string) => void;
     onSendAttachment?: (file: File) => void;
     uploadProgress?: number | null;
     onDownloadAttachment?: (attachmentId: string) => void;
@@ -49,6 +51,7 @@ function ChatWindow({
                         counterpartId,
                         isGroup,
                         messages,
+                        loadingHistory,
                         historyError,
                         onReloadHistory,
                         inputText,
@@ -63,6 +66,7 @@ function ChatWindow({
                         blockedByMe,
                         blockedByPeer,
                         onDeleteMessage,
+                        onForwardMessage,
                         onSendAttachment,
                         uploadProgress,
                         onDownloadAttachment,
@@ -283,6 +287,7 @@ function ChatWindow({
                 outboxStatusById={outboxStatusById}
                 isGroup={isGroup}
                 authorName={authorName}
+                loadingHistory={loadingHistory}
                 historyError={historyError}
                 onReloadHistory={onReloadHistory}
                 hasEarlier={hasEarlier}
@@ -293,6 +298,7 @@ function ChatWindow({
                 onResolveAttachment={onResolveAttachment}
                 onDownloadAttachment={onDownloadAttachment}
                 onDeleteMessage={onDeleteMessage}
+                onForwardMessage={onForwardMessage}
                 onRetryMessage={onRetryMessage}
                 onDiscardMessage={onDiscardMessage}
             />
