@@ -43,12 +43,13 @@ export function ForwardModal({
                                 className="text-gray-400 hover:text-gray-700 text-lg leading-none">×</button>
                     </div>
                     <p className="mt-1 truncate text-xs text-gray-500" title={preview}>“{preview}”</p>
+                    {/* text-base (16px): a smaller font makes mobile browsers auto-zoom on focus, which
+                        blew the dialog off-screen (same bug fixed in the group roster panel). */}
                     <input
                         value={q}
                         onChange={(e) => setQ(e.target.value)}
                         placeholder={t("chat.searchPlaceholder", {defaultValue: "Search"})}
-                        className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-1.5 text-sm focus:border-teal-600 focus:outline-none"
-                        autoFocus
+                        className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-1.5 text-base focus:border-teal-600 focus:outline-none"
                     />
                 </div>
                 <ul className="flex-1 overflow-y-auto">

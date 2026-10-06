@@ -1,10 +1,10 @@
-import {useEffect, useRef, useState} from "react";
+import {useEffect, useRef, useState, type ReactNode} from "react";
 import {useTranslation} from "react-i18next";
 
 export interface MsgMenuItem {
     key: string;
     label: string;
-    icon: string;
+    icon: ReactNode;
     onClick: () => void;
     danger?: boolean;
     ariaLabel?: string;   // keep stable aria-labels for specific actions (e.g. delete)
@@ -55,9 +55,9 @@ export function MessageMenu({items, align}: {items: MsgMenuItem[]; align: "left"
                             type="button"
                             aria-label={it.ariaLabel ?? it.label}
                             onClick={() => { setOpen(false); it.onClick(); }}
-                            className={`flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm hover:bg-gray-100 ${it.danger ? "text-red-600" : ""}`}
+                            className={`flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm hover:bg-gray-100 ${it.danger ? "text-red-600" : "text-teal-800"}`}
                         >
-                            <span aria-hidden className="w-4 text-center text-base leading-none">{it.icon}</span>
+                            <span aria-hidden className="flex w-4 shrink-0 items-center justify-center">{it.icon}</span>
                             {it.label}
                         </button>
                     ))}

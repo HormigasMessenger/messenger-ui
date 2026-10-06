@@ -8,6 +8,7 @@ import {AttachmentVideo} from "./AttachmentVideo.tsx";
 import {linkify} from "./messageFormat.tsx";
 import {isSecretEnvelope} from "@/features/e2ee/lib/secretChat.ts";
 import {MessageMenu, type MsgMenuItem} from "./MessageMenu.tsx";
+import {CopyIcon, ForwardIcon, TrashIcon} from "./icons.tsx";
 
 export interface ChatMessageView {
     id: string;
@@ -66,14 +67,14 @@ export function MessageBubble({
     // one is discarded via the inline status control below, not server-deleted).
     const menuItems: MsgMenuItem[] = [];
     if (canCopyForward) {
-        menuItems.push({key: "copy", icon: "⧉", label: t("chat.copy", {defaultValue: "Copy"}), onClick: copyText});
+        menuItems.push({key: "copy", icon: <CopyIcon />, label: t("chat.copy", {defaultValue: "Copy"}), onClick: copyText});
         if (onForwardMessage) {
-            menuItems.push({key: "forward", icon: "➢", label: t("chat.forward", {defaultValue: "Forward"}), onClick: () => onForwardMessage(msg.text)});
+            menuItems.push({key: "forward", icon: <ForwardIcon />, label: t("chat.forward", {defaultValue: "Forward"}), onClick: () => onForwardMessage(msg.text)});
         }
     }
     if (onDeleteMessage && msg.fromMe && !status) {
         menuItems.push({
-            key: "delete", icon: "🗑", danger: true,
+            key: "delete", icon: <TrashIcon />, danger: true,
             label: t("chat.deleteMessage"), ariaLabel: t("chat.deleteMessage"),
             onClick: () => onDeleteMessage(msg.id, msg.meta?.attachmentId),
         });
