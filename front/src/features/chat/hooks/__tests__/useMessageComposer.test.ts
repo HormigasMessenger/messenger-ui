@@ -71,6 +71,30 @@ describe("useMessageComposer", () => {
         expect(result.current.messageInput).toBe("");
     });
 
+    it("forwardMessage enqueues into the TARGET chat, honoring the TARGET's secret setting", () => {
+        summaries["t-secret"] = {counterpartId: "ps"};
+        summaries["t-plain"] = {counterpartId: "pp"};
+        const store = configureStore({
+            reducer: {secretChats: (s: {byId: Record<string, true>} = {byId: {"t-secret": true}}) => s},
+        });
+        const wrapper = ({children}: {children: ReactNode}) => createElement(Provider, {store, children});
+        const {result} = renderHook(() => useMessageComposer({selectedChatId: "src", myId: MY, getSummary}), {wrapper});
+        act(() => { result.current.forwardMessage("t-secret", "hi"); });
+        act(() => { result.current.forwardMessage("t-plain", "hi"); });
+        // (dispatch, text, myId, chatId, counterpartId, orderId, secret) — secret follows the TARGET chat.
+        expect(enqueue.mock.calls[0].slice(1)).toEqual(["hi", MY, "t-secret", "ps", undefined, true]);
+        expect(enqueue.mock.calls[1].slice(1)).toEqual(["hi", MY, "t-plain", "pp", undefined, false]);
+    });
+
+    it("forwardMessage no-ops on empty text or an unresolvable target", () => {
+        const {wrapper} = makeHarness();
+        const {result} = renderHook(() => useMessageComposer({selectedChatId: "src", myId: MY, getSummary}), {wrapper});
+        act(() => { result.current.forwardMessage("t", "   "); });   // blank
+        act(() => { result.current.forwardMessage("t", "hi"); });    // no summary for "t"
+        expect(enqueue).not.toHaveBeenCalled();
+        expect(toast.error).toHaveBeenCalled();
+    });
+
     it("notifyTyping sends TYPING_IN, throttled to one frame per burst", () => {
         summaries["c1"] = {counterpartId: "peer"};
         const {wrapper, sent} = makeHarness();

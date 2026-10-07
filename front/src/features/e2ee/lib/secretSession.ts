@@ -38,8 +38,11 @@ const addrOf = (userId: string, deviceUuid: string) => new SignalProtocolAddress
 const ROSTER_TTL_MS = 24 * 60 * 60 * 1000;   // 24h
 
 /** Invalidate the cached roster for a peer so the next send re-resolves from the directory. Established
- * sessions are kept — only the "which devices" snapshot is dropped. Called on a rekey hint or a local
- * decrypt failure (peer identity changed). */
+ * sessions are kept — only the "which devices" snapshot is dropped. Called when a peer's device sends us a
+ * rekey hint (it received a message we addressed to a stale device of theirs). Note: a peer re-provision in
+ * this client always yields a NEW deviceId, so the mis-addressed message triggers that hint — there is no
+ * separate "same-device identity rotation" path to invalidate on (the client never rotates identity in
+ * place); if that ever changes, add a local-decrypt-failure invalidation here. */
 export async function invalidatePeer(store: SignalStore, peerUserId: string): Promise<void> {
     await store.deleteRosterSnapshot(peerUserId);
 }

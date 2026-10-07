@@ -16,6 +16,8 @@ import {useCallRingtone} from "@/features/call/hooks/useCallRingtone.ts";
 import {LightboxProvider} from "@/features/chat/ui/Lightbox.tsx";
 import {ForwardModal} from "@/features/chat/ui/ForwardModal.tsx";
 
+const EMPTY_SECRET: Record<string, true> = {};   // stable ref → no re-render churn when there are no secret chats
+
 import type {RootState, AppDispatch} from "@/store/store.ts";
 import {outgoingCall, answerViaPush, acceptCall, localEnd, rejectCall} from "@/features/call/model/slices/callSlice";
 import {parseCallDeepLink} from "@/features/call/model/callDeepLink.ts";
@@ -114,6 +116,11 @@ export default function Messenger() {
     ====================== */
     const peerContact = chat.selectedChat ?? null;
     const myName = useSelector((state: RootState) => state.user.name);
+    // Which conversations are secret (E2EE) — to flag a secret-origin forward and mark secret targets.
+    const secretChatIds = useSelector((state: RootState) => state.secretChats?.byId ?? EMPTY_SECRET);
+    const isSecretChat = useCallback((id: string) => !!secretChatIds[id], [secretChatIds]);
+    // Forward is initiated from the OPEN chat, so its secrecy is the source's secrecy.
+    const forwardFromSecret = forwardText !== null && !!chat.selectedChatId && isSecretChat(chat.selectedChatId);
 
     // Stable callbacks so the memoized ChatList/ChatWindow don't re-render on unrelated state.
     const selectedCounterpartId = chat.selectedCounterpartId;
@@ -180,8 +187,10 @@ export default function Messenger() {
             {/* ===== Forward picker ===== */}
             {forwardText !== null && (
                 <ForwardModal
-                    chats={chat.filteredChats}
+                    chats={chat.contacts}
                     preview={forwardText}
+                    sourceSecret={forwardFromSecret}
+                    isSecretTarget={isSecretChat}
                     onPick={(targetChatId) => { chat.forwardMessage(targetChatId, forwardText); setForwardText(null); }}
                     onClose={() => setForwardText(null)}
                 />

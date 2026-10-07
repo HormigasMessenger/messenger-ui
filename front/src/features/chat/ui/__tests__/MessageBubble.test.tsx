@@ -84,6 +84,21 @@ describe("MessageBubble discard / delete affordances", () => {
     });
 });
 
+describe("MessageBubble actions menu (copy/forward gating)", () => {
+    it("offers the ⋯ menu on a peer's real text message", () => {
+        const c = renderBubble({msg: msg({fromMe: false, text: "hola"}), onForwardMessage: vi.fn()});
+        expect(c.querySelector("button[aria-label='chat.messageActions']")).toBeTruthy();
+    });
+
+    it("does NOT offer copy/forward on a secret-state placeholder (unavailable/lost/expired)", () => {
+        // mock t is identity, so a placeholder's text equals its secretStateKey → treated as non-content.
+        for (const placeholder of ["chat.decryptUnavailable", "chat.decryptLost", "chat.decryptExpired"]) {
+            const c = renderBubble({msg: msg({fromMe: false, text: placeholder}), onForwardMessage: vi.fn()});
+            expect(c.querySelector("button[aria-label='chat.messageActions']"), placeholder).toBeNull();
+        }
+    });
+});
+
 describe("MessageBubble in a GROUP", () => {
     it("labels the author on a peer's bubble", () => {
         const c = renderBubble({msg: msg({fromMe: false, from: "u2"}), isGroup: true, authorName: "Alice"});

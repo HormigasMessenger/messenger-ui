@@ -23,9 +23,14 @@ export function buildRekeyHint(peerId: string, chatId: string): RekeyHint {
  * re-resolve per peer). */
 export function makeThrottle(windowMs: number): (key: string, now?: number) => boolean {
     const last = new Map<string, number>();
+    const MAX = 512; // bound the map: the inbound-hint throttle is keyed by a SERVER-controlled `from`, so an
+                     // adversarial server could otherwise grow it unboundedly (slow memory DoS).
     return (key: string, now = Date.now()) => {
         const t = last.get(key);
         if (t !== undefined && now - t < windowMs) return false; // presence check, so the first call always fires
+        if (last.size >= MAX) { // prune entries past the window (they'd fire anyway) before inserting
+            for (const [k, ts] of last) if (now - ts >= windowMs) last.delete(k);
+        }
         last.set(key, now);
         return true;
     };

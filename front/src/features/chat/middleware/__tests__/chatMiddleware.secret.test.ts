@@ -105,6 +105,19 @@ describe("chatMiddleware — secret live path", () => {
         });
     });
 
+    it("wrong-device (mis-addressed) → emits a metadata-only rekey hint to the sender AND recovers", async () => {
+        h.decryptReceived.mockRejectedValue(new Error("e2ee: envelope has no ciphertext for this device"));
+        const {dispatched, run} = harness("c1");
+        run(secretOut());
+        await flush();
+        const hint = dispatched.find((a) => a.type === "ws/send" && (a.payload as {type?: string})?.type === "e2ee:rekey");
+        expect(hint, "a rekey hint should be sent").toBeTruthy();
+        expect(hint!.payload).toEqual({type: "e2ee:rekey", to: "peer", conversationId: "c1"}); // no key material
+        // The mis-addressed message itself is still routed to recovery (wrong-device is recoverable).
+        expect(settledText(dispatched)).toBe("chat.decryptPending");
+        expect(h.reportUndecryptable).toHaveBeenCalled();
+    });
+
     it("corrupt frame → 'unavailable', no recovery request", async () => {
         h.decryptReceived.mockRejectedValue(new Error("e2ee: not an envelope"));
         const {dispatched, run} = harness("c1");

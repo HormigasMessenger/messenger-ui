@@ -62,10 +62,16 @@ export const chatMiddleware: Middleware = (store) => (next) => (action) => {
                     if (plain == null && !aged && m.from && m.from !== myId) {
                         // Never decrypted live → try the ratchet now (in-order over history).
                         try { plain = await decryptReceived(m.from, m.text); void savePlaintext(m.id, chatId, plain); }
-                        catch {
+                        catch (e) {
                             // Permanent gap / lost ciphertext → hand off to client-to-client recovery (Step B),
                             // correlated by the sender's client id. Show "⏳ re-requested" until it resolves/expires.
                             if (m.clientId) { toRecover.push({clientId: m.clientId, serverId: m.id}); peerId = m.from; recoverable = true; }
+                            // Mis-addressed to another of our devices (offline history only ever delivered it) →
+                            // nudge the sender to re-resolve our roster, same as the live path, so future sends
+                            // reach us without waiting out the 24h roster TTL. Coalesced per peer.
+                            if (m.from && isWrongDevice(classifyDecryptError(e)) && rekeyHintThrottle(m.from)) {
+                                d({type: "ws/send", payload: buildRekeyHint(m.from, chatId)});
+                            }
                         }
                     }
                     // "lost" ONLY when we actually tried and failed within the window. Own messages we can't

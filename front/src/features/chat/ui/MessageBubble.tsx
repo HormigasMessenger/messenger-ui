@@ -7,6 +7,7 @@ import {AttachmentAudio} from "./AttachmentAudio.tsx";
 import {AttachmentVideo} from "./AttachmentVideo.tsx";
 import {linkify} from "./messageFormat.tsx";
 import {isSecretEnvelope} from "@/features/e2ee/lib/secretChat.ts";
+import {secretStateKey, type SecretMsgState} from "@/features/e2ee/lib/failure.ts";
 import {MessageMenu, type MsgMenuItem} from "./MessageMenu.tsx";
 import {CopyIcon, ForwardIcon, TrashIcon} from "./icons.tsx";
 
@@ -57,7 +58,11 @@ export function MessageBubble({
     const {t} = useTranslation();
     // Copy / forward apply to real TEXT only — not attachments, and not a secret message still showing
     // its raw envelope (undecrypted). A decrypted secret message copies/forwards its plaintext.
-    const canCopyForward = msg.kind !== "attachment" && !isSecretEnvelope(msg.text) && !!msg.text.trim();
+    // Copy / forward apply to real TEXT only — not attachments, not a raw (undecrypted) envelope, and not a
+    // secret-state PLACEHOLDER ("🔒 unavailable", "🕗 expired", …), which is UI text, not message content.
+    const SECRET_PLACEHOLDERS: SecretMsgState[] = ["decrypting", "pending", "expired", "lost", "unavailable"];
+    const isPlaceholder = SECRET_PLACEHOLDERS.some((s) => msg.text === t(secretStateKey(s)));
+    const canCopyForward = msg.kind !== "attachment" && !isSecretEnvelope(msg.text) && !!msg.text.trim() && !isPlaceholder;
     const copyText = () => {
         navigator.clipboard?.writeText(msg.text)
             .then(() => toast.success(t("chat.copied", {defaultValue: "Copied"})))

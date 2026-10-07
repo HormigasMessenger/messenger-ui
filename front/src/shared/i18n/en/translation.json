@@ -63,6 +63,8 @@
     "forwardTo": "Forward to…",
     "noChats": "No chats",
     "messageActions": "Message actions",
+    "forwardSecretWarning": "This message is from a secret chat. Forwarding it to {{name}} will send its text unencrypted.",
+    "forwardAnyway": "Forward unencrypted",
     "attach": "Attach file",
     "send": "Send",
     "back": "Back",

@@ -63,6 +63,8 @@
     "forwardTo": "Reenviar a…",
     "noChats": "Sin chats",
     "messageActions": "Acciones del mensaje",
+    "forwardSecretWarning": "Este mensaje es de un chat secreto. Reenviarlo a {{name}} enviará su texto sin cifrar.",
+    "forwardAnyway": "Reenviar sin cifrar",
     "attach": "Adjuntar archivo",
     "send": "Enviar",
     "back": "Atrás",

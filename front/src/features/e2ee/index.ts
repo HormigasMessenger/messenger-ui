@@ -35,9 +35,14 @@ async function checkReplenish(store: SignalStore, deviceId: string): Promise<voi
         await maybeReplenish(deviceId, oneTimePreKeysRemaining, store);
     } catch { /* directory unreachable → next tick */ }
 }
+let replenishArmed = false;
 function armReplenishCheck(store: SignalStore, deviceId: string): void {
-    if (!replenishTimer) replenishTimer = setInterval(() => { void checkReplenish(store, deviceId); }, REPLENISH_CHECK_MS);
-    // Also re-check when the tab returns to the foreground after a long idle (likely drain while away).
+    // Idempotent: provisionE2EEInBackground can run again (RequireAuth remount / re-login), so attach the
+    // timer AND the visibility listener exactly once — an unguarded addEventListener leaked a listener per
+    // call, each firing a redundant selfCount+replenish on every tab focus.
+    if (replenishArmed) return;
+    replenishArmed = true;
+    replenishTimer = setInterval(() => { void checkReplenish(store, deviceId); }, REPLENISH_CHECK_MS);
     try {
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible") void checkReplenish(store, deviceId);
